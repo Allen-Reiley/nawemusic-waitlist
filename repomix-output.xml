@@ -1,0 +1,1057 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: backend/**/*.py, frontend/src/**/*.{ts,tsx}, tracker/src/**/*.js, docker-compose.yml, {README,REMEMBER,VOID_CONTEXT}.md
+- Files matching these patterns are excluded: **/node_modules/**, **/venv/**, **/.next/**, **/dist/**, **/tests/**, **/.env*, **/*.log, **/package-lock.json, **/pnpm-lock.yaml, **/yarn.lock
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+backend/
+  app/
+    core/
+      config.py
+      db.py
+    models/
+      leads.py
+    main.py
+frontend/
+  src/
+    app/
+      layout.tsx
+      page.tsx
+      providers.tsx
+    components/
+      ui/
+        animated-shader-hero.tsx
+    lib/
+      api.ts
+      utils.ts
+    next.config.ts
+docker-compose.yml
+REMEMBER.md
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="backend/app/core/db.py">
+from sqlmodel import create_engine, Session, SQLModel
+from .config import settings
+
+# Uses the DATABASE_URL from your .env
+engine = create_engine(settings.DATABASE_URL, echo=True)
+
+def init_db():
+    SQLModel.metadata.create_all(engine)
+
+def get_session():
+    with Session(engine) as session:
+        yield session
+</file>
+
+<file path="backend/app/models/leads.py">
+
+</file>
+
+<file path="frontend/src/app/layout.tsx">
+import type { Metadata } from "next";
+import "./globals.css";
+import Providers from "./providers"; // Import our new provider
+
+export const metadata: Metadata = {
+  title: "NaweMusic Waitlist",
+  description: "Waitlist to a high value network for artists and their audience.",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
+</file>
+
+<file path="frontend/src/app/page.tsx">
+'use client';
+import { useState } from 'react';
+import Hero from '@/components/ui/animated-shader-hero';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export default function Page() {
+  const [step, setStep] = useState(0); 
+  const [formData, setFormData] = useState({ name: '', email: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  const handleJoinWaitlist = () => {
+    setError(null);
+    
+    const cleanName = formData.name.replace(/<[^>]*>?/gm, '').trim();
+    const cleanEmail = formData.email.replace(/<[^>]*>?/gm, '').trim();
+  
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+    if (cleanName.length < 2) {
+      setError("Please enter your full name.");
+      return;
+    }
+  
+    if (!emailRegex.test(cleanEmail)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+  
+    setFormData({ name: cleanName, email: cleanEmail });
+    setStep(1);
+  };
+
+  return (
+    <main className="relative min-h-screen bg-black">
+      <Hero 
+        headline={{
+          line1: "Own Your Fanbase",
+          line2: "Join The Waitlist"
+        }}
+        subtitle="Stop renting your audience from social media—start owning it. Your music. Your audience. Your way."
+        className={step > 0 ? "blur-md scale-95 transition-all duration-700" : ""}
+      />
+
+      {/* Hero Input Section */}
+      {step === 0 && (
+        /* Changed from 'absolute bottom-0' to 'relative' with negative margin to follow document flow while staying elevated */
+        <div className="relative z-30 flex flex-col items-center p-6 pb-12 md:pb-20 mt-[-14rem] min-[444px]:mt-[-13rem] sm:mt-[-12rem] md:mt-[-10rem] lg:mt-[-12rem]">
+          <motion.div 
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="w-full max-w-md md:max-w-2xl bg-black/40 backdrop-blur-md p-6 md:p-8 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-6 md:gap-8"
+          >
+            <input 
+              placeholder="Full Name" 
+              type="text"
+              maxLength={50}
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
+              onChange={(e) => {
+                setError(null);
+                setFormData({...formData, name: e.target.value});
+              }}
+            />
+            <input 
+              placeholder="Email Address" 
+              type="email" 
+              required
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
+              onChange={(e) => {
+                setError(null);
+                setFormData({...formData, email: e.target.value});
+              }}
+            />
+            <button 
+              onClick={handleJoinWaitlist}
+              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!formData.name || !formData.email}
+            >
+              Secure My Spot
+            </button>
+          </motion.div>
+
+          <div className="h-6 mt-4"> 
+            <AnimatePresence mode="wait">
+              {error && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="text-orange-400/90 text-sm font-medium tracking-wide"
+                >
+                  {error}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Step Onboarding Modal */}
+      <AnimatePresence mode="wait">
+        {step > 0 && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+          >
+            <motion.div 
+              layout
+              className="relative bg-[#0a0a0a] border border-white/10 p-8 md:p-12 rounded-[2rem] max-w-xl w-full text-white shadow-2xl overflow-hidden"
+            >
+              {/* Progress Dots */}
+              <div className="absolute top-8 right-8 flex gap-2">
+                {[1, 2, 3, 4].map((i) => (
+                  <div 
+                    key={i} 
+                    className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${step >= i ? 'bg-orange-500 w-4' : 'bg-white/20'}`} 
+                  />
+                ))}
+              </div>
+
+              {/* Content Slides */}
+              <div className="min-h-[280px] flex flex-col justify-center">
+                <AnimatePresence mode="wait">
+                  {step === 1 && (
+                    <motion.div key="s1" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
+                      <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent">The Philosophy</h3>
+                      <p className="text-white/70 text-lg leading-relaxed">
+                        NaweMusic is the bridge between your craft and your community. We’re moving music off the social media feed and onto your own terms. Sell tickets, host events, and talk to your fans directly on a platform you actually control.
+                      </p>
+                    </motion.div>
+                  )}
+                  {step === 2 && (
+                    <motion.div key="s2" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Join the Revolution</h3>
+                      <p className="text-white/70 text-lg leading-relaxed">
+                        We are building a network of premium artists. Spread the word and earn a 30% one-time commission for every verified artist you bring in. Inviting others isn’t just sharing a link—it’s signaling a change in the industry.
+                      </p>
+                    </motion.div>
+                  )}
+                  {step === 3 && (
+                    <motion.div key="s3" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Founding Committee</h3>
+                      <p className="text-white/60 mb-6 font-medium">The top 10 referrers gain shareholder-level influence:</p>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Lifetime Free Access</li>
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Performance Ownership</li>
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Feature Voting Power</li>
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Recurring Content Sponsoring</li>
+                      </ul>
+                    </motion.div>
+                  )}
+                  {step === 4 && (
+                    <motion.div key="s4" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Final Verification</h3>
+                      <div className="space-y-4">
+                        <p className="text-white/70 text-lg leading-relaxed">
+                          We’ve sent a secure link to <span className="text-orange-400 font-semibold">{formData.email}</span>. 
+                        </p>
+                        
+                        <p className="text-white/60 text-sm leading-relaxed">
+                          The email includes our Terms & Conditions—please read them carefully as they outline your rights and the affiliate commission structure. 
+                        </p>
+
+                        <div className="bg-white/5 border-l-2 border-orange-500 p-4 rounded-r-xl">
+                          <p className="text-sm text-white/80">
+                            <span className="text-orange-400 font-bold">Note:</span> At launch, nawemusic will be <b>R500/year</b>. 
+                            Top referrers on the Committee will bypass this fee, gain early access to test new tools, and directly suggest features for the roadmap.
+                          </p>
+                        </div>
+
+                        <p className="text-white/40 text-xs italic pt-2">
+                          Verify your email now to activate your account and secure your affiliate link.
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Navigation Buttons */}
+              <div className="flex flex-col md:flex-row-reverse gap-3 mt-10">
+                <button 
+                  onClick={() => step < 4 ? setStep(s => s + 1) : setStep(0)}
+                  className="w-full md:flex-1 bg-orange-500 text-black py-4 rounded-xl font-bold text-lg hover:bg-orange-400 transition-all active:scale-95"
+                >
+                  {step === 4 ? "Done" : "Continue"}
+                </button>
+                {step < 4 && (
+                   <button 
+                    onClick={() => setStep(s => s - 1)} 
+                    className="w-full md:w-auto px-8 text-white/40 py-4 text-sm font-medium hover:text-white transition-colors border border-white/5 md:border-transparent rounded-xl"
+                  >
+                    Go Back
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-col items-center mt-8 pt-6 border-t border-white/5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/20">A Project by</p>
+                <p className="text-sm font-bold text-white/40 mt-1 uppercase tracking-wider">AuraWorks (Pty) Ltd</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </main>
+  );
+}
+</file>
+
+<file path="frontend/src/app/providers.tsx">
+'use client';
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      {children}
+    </QueryClientProvider>
+  );
+}
+</file>
+
+<file path="frontend/src/components/ui/animated-shader-hero.tsx">
+import React, { useRef, useEffect, useState } from 'react';
+
+// Types for component props
+interface HeroProps {
+  trustBadge?: {
+    text: string;
+    icons?: string[];
+  };
+  headline: {
+    line1: string;
+    line2: string;
+  };
+  subtitle: string;
+  buttons?: {
+    primary?: {
+      text: string;
+      onClick?: () => void;
+    };
+    secondary?: {
+      text: string;
+      onClick?: () => void;
+    };
+  };
+  className?: string;
+}
+
+// Reusable Shader Background Hook
+const useShaderBackground = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>(0);
+  const rendererRef = useRef<WebGLRenderer | null>(null);
+  const pointersRef = useRef<PointerHandler | null>(null);
+
+  // WebGL Renderer class
+  class WebGLRenderer {
+    private canvas: HTMLCanvasElement;
+    private gl: WebGL2RenderingContext;
+    private program: WebGLProgram | null = null;
+    private vs: WebGLShader | null = null;
+    private fs: WebGLShader | null = null;
+    private buffer: WebGLBuffer | null = null;
+    private scale: number;
+    private shaderSource: string;
+    private mouseMove = [0, 0];
+    private mouseCoords = [0, 0];
+    private pointerCoords = [0, 0];
+    private nbrOfPointers = 0;
+
+    private vertexSrc = `#version 300 es
+precision highp float;
+in vec4 position;
+void main(){gl_Position=position;}`;
+
+    private vertices = [-1, 1, -1, -1, 1, 1, 1, -1];
+
+    constructor(canvas: HTMLCanvasElement, scale: number) {
+      this.canvas = canvas;
+      this.scale = scale;
+      this.gl = canvas.getContext('webgl2')!;
+      this.gl.viewport(0, 0, canvas.width * scale, canvas.height * scale);
+      this.shaderSource = defaultShaderSource;
+    }
+
+    updateShader(source: string) {
+      this.reset();
+      this.shaderSource = source;
+      this.setup();
+      this.init();
+    }
+
+    updateMove(deltas: number[]) {
+      this.mouseMove = deltas;
+    }
+
+    updateMouse(coords: number[]) {
+      this.mouseCoords = coords;
+    }
+
+    updatePointerCoords(coords: number[]) {
+      this.pointerCoords = coords;
+    }
+
+    updatePointerCount(nbr: number) {
+      this.nbrOfPointers = nbr;
+    }
+
+    updateScale(scale: number) {
+      this.scale = scale;
+      this.gl.viewport(0, 0, this.canvas.width * scale, this.canvas.height * scale);
+    }
+
+    compile(shader: WebGLShader, source: string) {
+      const gl = this.gl;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const error = gl.getShaderInfoLog(shader);
+        console.error('Shader compilation error:', error);
+      }
+    }
+
+    test(source: string) {
+      let result = null;
+      const gl = this.gl;
+      const shader = gl.createShader(gl.FRAGMENT_SHADER)!;
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        result = gl.getShaderInfoLog(shader);
+      }
+      gl.deleteShader(shader);
+      return result;
+    }
+
+    reset() {
+      const gl = this.gl;
+      if (this.program && !gl.getProgramParameter(this.program, gl.DELETE_STATUS)) {
+        if (this.vs) {
+          gl.detachShader(this.program, this.vs);
+          gl.deleteShader(this.vs);
+        }
+        if (this.fs) {
+          gl.detachShader(this.program, this.fs);
+          gl.deleteShader(this.fs);
+        }
+        gl.deleteProgram(this.program);
+      }
+    }
+
+    setup() {
+      const gl = this.gl;
+      this.vs = gl.createShader(gl.VERTEX_SHADER)!;
+      this.fs = gl.createShader(gl.FRAGMENT_SHADER)!;
+      this.compile(this.vs, this.vertexSrc);
+      this.compile(this.fs, this.shaderSource);
+      this.program = gl.createProgram()!;
+      gl.attachShader(this.program, this.vs);
+      gl.attachShader(this.program, this.fs);
+      gl.linkProgram(this.program);
+
+      if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+        console.error(gl.getProgramInfoLog(this.program));
+      }
+    }
+
+    init() {
+      const gl = this.gl;
+      const program = this.program!;
+      
+      this.buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertices), gl.STATIC_DRAW);
+
+      const position = gl.getAttribLocation(program, 'position');
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+
+      (program as any).resolution = gl.getUniformLocation(program, 'resolution');
+      (program as any).time = gl.getUniformLocation(program, 'time');
+      (program as any).move = gl.getUniformLocation(program, 'move');
+      (program as any).touch = gl.getUniformLocation(program, 'touch');
+      (program as any).pointerCount = gl.getUniformLocation(program, 'pointerCount');
+      (program as any).pointers = gl.getUniformLocation(program, 'pointers');
+    }
+
+    render(now = 0) {
+      const gl = this.gl;
+      const program = this.program;
+      
+      if (!program || gl.getProgramParameter(program, gl.DELETE_STATUS)) return;
+    
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+      
+      gl.uniform2f((program as any).resolution, this.canvas.width, this.canvas.height);
+      gl.uniform1f((program as any).time, now * 1e-3);
+    
+      // FIX: Accessing indices directly ensures 2 arguments are passed
+      gl.uniform2f((program as any).move, this.mouseMove[0], this.mouseMove[1]);
+      gl.uniform2f((program as any).touch, this.mouseCoords[0], this.mouseCoords[1]);
+      
+      gl.uniform1i((program as any).pointerCount, this.nbrOfPointers);
+      gl.uniform2fv((program as any).pointers, this.pointerCoords);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+  }
+
+  // Pointer Handler class
+  class PointerHandler {
+    private scale: number;
+    private active = false;
+    private pointers = new Map<number, number[]>();
+    private lastCoords = [0, 0];
+    private moves = [0, 0];
+
+    constructor(element: HTMLCanvasElement, scale: number) {
+      this.scale = scale;
+      
+      const map = (element: HTMLCanvasElement, scale: number, x: number, y: number) => 
+        [x * scale, element.height - y * scale];
+
+      element.addEventListener('pointerdown', (e) => {
+        this.active = true;
+        this.pointers.set(e.pointerId, map(element, this.getScale(), e.clientX, e.clientY));
+      });
+
+      element.addEventListener('pointerup', (e) => {
+        if (this.count === 1) {
+          this.lastCoords = this.first;
+        }
+        this.pointers.delete(e.pointerId);
+        this.active = this.pointers.size > 0;
+      });
+
+      element.addEventListener('pointerleave', (e) => {
+        if (this.count === 1) {
+          this.lastCoords = this.first;
+        }
+        this.pointers.delete(e.pointerId);
+        this.active = this.pointers.size > 0;
+      });
+
+      element.addEventListener('pointermove', (e) => {
+        if (!this.active) return;
+        this.lastCoords = [e.clientX, e.clientY];
+        this.pointers.set(e.pointerId, map(element, this.getScale(), e.clientX, e.clientY));
+        this.moves = [this.moves[0] + e.movementX, this.moves[1] + e.movementY];
+      });
+    }
+
+    getScale() {
+      return this.scale;
+    }
+
+    updateScale(scale: number) {
+      this.scale = scale;
+    }
+
+    get count() {
+      return this.pointers.size;
+    }
+
+    get move() {
+      return this.moves;
+    }
+
+    get coords() {
+      return this.pointers.size > 0 
+        ? Array.from(this.pointers.values()).flat() 
+        : [0, 0];
+    }
+
+    get first() {
+      return this.pointers.values().next().value || this.lastCoords;
+    }
+  }
+
+  const resize = () => {
+    if (!canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const dpr = Math.max(1, 0.5 * window.devicePixelRatio);
+    
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    
+    if (rendererRef.current) {
+      rendererRef.current.updateScale(dpr);
+    }
+  };
+
+  const loop = (now: number) => {
+    if (!rendererRef.current || !pointersRef.current) return;
+    
+    rendererRef.current.updateMouse(pointersRef.current.first);
+    rendererRef.current.updatePointerCount(pointersRef.current.count);
+    rendererRef.current.updatePointerCoords(pointersRef.current.coords);
+    rendererRef.current.updateMove(pointersRef.current.move);
+    rendererRef.current.render(now);
+    animationFrameRef.current = requestAnimationFrame(loop);
+  };
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    const canvas = canvasRef.current;
+    const dpr = Math.max(1, 0.5 * window.devicePixelRatio);
+    
+    rendererRef.current = new WebGLRenderer(canvas, dpr);
+    pointersRef.current = new PointerHandler(canvas, dpr);
+    
+    rendererRef.current.setup();
+    rendererRef.current.init();
+    
+    resize();
+    
+    if (rendererRef.current.test(defaultShaderSource) === null) {
+      rendererRef.current.updateShader(defaultShaderSource);
+    }
+    
+    loop(0);
+    
+    window.addEventListener('resize', resize);
+    
+    return () => {
+      window.removeEventListener('resize', resize);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (rendererRef.current) {
+        rendererRef.current.reset();
+      }
+    };
+  }, []);
+
+  return canvasRef;
+};
+
+// Reusable Hero Component
+const Hero: React.FC<HeroProps> = ({
+  trustBadge,
+  headline,
+  subtitle,
+  buttons,
+  className = ""
+}) => {
+  const canvasRef = useShaderBackground();
+
+  return (
+    <div className={`relative w-full min-h-screen flex flex-col overflow-hidden bg-black ${className}`}>
+      <style jsx>{`
+        @keyframes fade-in-down {
+          from {
+            opacity: 0;
+            transform: translateY(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        @keyframes fade-in-up {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .animate-fade-in-down {
+          animation: fade-in-down 0.8s ease-out forwards;
+        }
+        
+        .animate-fade-in-up {
+          animation: fade-in-up 0.8s ease-out forwards;
+          opacity: 0;
+        }
+        
+        .animation-delay-200 {
+          animation-delay: 0.2s;
+        }
+        
+        .animation-delay-400 {
+          animation-delay: 0.4s;
+        }
+        
+        .animation-delay-600 {
+          animation-delay: 0.6s;
+        }
+        
+        .animation-delay-800 {
+          animation-delay: 0.8s;
+        }
+        
+        @keyframes gradient-shift {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+        
+        .animate-gradient {
+          background-size: 200% 200%;
+          animation: gradient-shift 3s ease infinite;
+        }
+      `}</style>
+      
+      <canvas
+        ref={canvasRef}
+        className="fixed inset-0 w-full h-full object-cover touch-none"
+        style={{ background: 'black' }}
+      />
+      
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pt-24 pb-12 text-white">
+        <div className="flex flex-col items-center text-center space-y-8 max-w-5xl mx-auto mb-auto mt-auto">
+          
+          <div className="mb-2 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md animate-fade-in-down">
+            <p className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
+              Sponsored By AuraWorks (Pty) Ltd
+            </p>
+          </div>
+
+          {trustBadge && (
+            <div className="mb-4 animate-fade-in-down">
+              <div className="flex items-center gap-2 px-6 py-3 bg-orange-500/10 backdrop-blur-md border border-orange-300/30 rounded-full text-sm">
+                {trustBadge.icons && (
+                  <div className="flex">
+                    {trustBadge.icons.map((icon, index) => (
+                      <span key={index} className={`text-${index === 0 ? 'yellow' : index === 1 ? 'orange' : 'amber'}-300`}>
+                        {icon}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <span className="text-orange-100">{trustBadge.text}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold bg-gradient-to-r from-orange-300 via-yellow-400 to-amber-300 bg-clip-text text-transparent animate-fade-in-up animation-delay-200 leading-[1.1]">
+              {headline.line1}
+            </h1>
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold bg-gradient-to-r from-yellow-300 via-orange-400 to-red-400 bg-clip-text text-transparent animate-fade-in-up animation-delay-400 leading-[1.1]">
+              {headline.line2}
+            </h1>
+          </div>
+          
+          <div className="max-w-3xl mx-auto animate-fade-in-up animation-delay-600">
+            <p className="text-lg md:text-xl lg:text-2xl text-orange-100/90 font-light leading-relaxed">
+              {subtitle}
+            </p>
+          </div>
+          
+          {buttons && (
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mt-6 animate-fade-in-up animation-delay-800">
+              {buttons.primary && (
+                <button 
+                  onClick={buttons.primary.onClick}
+                  className="px-8 py-4 bg-gradient-to-r from-orange-500 to-yellow-500 hover:from-orange-600 hover:to-yellow-600 text-black rounded-full font-semibold text-lg transition-all duration-300 hover:scale-105 hover:shadow-xl hover:shadow-orange-500/25"
+                >
+                  {buttons.primary.text}
+                </button>
+              )}
+              {buttons.secondary && (
+                <button 
+                  onClick={buttons.secondary.onClick}
+                  className="px-8 py-4 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-300/30 hover:border-orange-300/50 text-orange-100 rounded-full font-semibold text-lg transition-all duration-300 hover:scale-105 backdrop-blur-sm"
+                >
+                  {buttons.secondary.text}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="h-24 md:h-32 w-full shrink-0" />
+      </div>
+    </div>
+  );
+};
+
+const defaultShaderSource = `#version 300 es
+/*********
+* made by Matthias Hurrle (@atzedent)
+*
+*	To explore strange new worlds, to seek out new life
+*	and new civilizations, to boldly go where no man has
+*	gone before.
+*/
+precision highp float;
+out vec4 O;
+uniform vec2 resolution;
+uniform float time;
+#define FC gl_FragCoord.xy
+#define T time
+#define R resolution
+#define MN min(R.x,R.y)
+// Returns a pseudo random number for a given point (white noise)
+float rnd(vec2 p) {
+  p=fract(p*vec2(12.9898,78.233));
+  p+=dot(p,p+34.56);
+  return fract(p.x*p.y);
+}
+// Returns a pseudo random number for a given point (value noise)
+float noise(in vec2 p) {
+  vec2 i=floor(p), f=fract(p), u=f*f*(3.-2.*f);
+  float
+  a=rnd(i),
+  b=rnd(i+vec2(1,0)),
+  c=rnd(i+vec2(0,1)),
+  d=rnd(i+1.);
+  return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+}
+// Returns a pseudo random number for a given point (fractal noise)
+float fbm(vec2 p) {
+  float t=.0, a=1.; mat2 m=mat2(1.,-.5,.2,1.2);
+  for (int i=0; i<5; i++) {
+    t+=a*noise(p);
+    p*=2.*m;
+    a*=.5;
+  }
+  return t;
+}
+float clouds(vec2 p) {
+	float d=1., t=.0;
+	for (float i=.0; i<3.; i++) {
+		float a=d*fbm(i*10.+p.x*.2+.2*(1.+i)*p.y+d+i*i+p);
+		t=mix(t,d,a);
+		d=a;
+		p*=2./(i+1.);
+	}
+	return t;
+}
+void main(void) {
+	vec2 uv=(FC-.5*R)/MN,st=uv*vec2(2,1);
+	vec3 col=vec3(0);
+	float bg=clouds(vec2(st.x+T*.5,-st.y));
+	uv*=1.-.3*(sin(T*.2)*.5+.5);
+	for (float i=1.; i<12.; i++) {
+		uv+=.1*cos(i*vec2(.1+.01*i, .8)+i*i+T*.5+.1*uv.x);
+		vec2 p=uv;
+		float d=length(p);
+		col+=.00125/d*(cos(sin(i)*vec3(1,2,3))+1.);
+		float b=noise(i+p+bg*1.731);
+		col+=.002*b/length(max(p,vec2(b*p.x*.02,p.y)));
+		col=mix(col,vec3(bg*.25,bg*.137,bg*.05),d);
+	}
+	O=vec4(col,1);
+}`;
+
+export default Hero;
+</file>
+
+<file path="frontend/src/lib/api.ts">
+import axios from 'axios';
+
+const api = axios.create({
+  // Use the environment variable, fallback to local only for dev
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+export default api;
+</file>
+
+<file path="frontend/src/lib/utils.ts">
+
+</file>
+
+<file path="frontend/src/next.config.ts">
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+};
+
+export default nextConfig;
+</file>
+
+<file path="docker-compose.yml">
+services:
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+
+volumes:
+  postgres_data:
+</file>
+
+<file path="REMEMBER.md">
+This is a solid technical stack. By using a subdomain under **auraworks.co.za**, you leverage your existing domain authority while keeping the brand distinct. 
+
+Below is the scope and execution plan focused on the transition from the "Waitlist Phase" to the "MVP Launch."
+
+---
+
+## 🏗️ Project Scope
+
+### 1. The Waitlist Phase (Current Focus)
+* **Lead Capture:** Name/Email collection with duplicate prevention.
+* **Affiliate Engine:** Unique referral link generation and attribution.
+* **Leaderboard:** Dynamic Top 10 ranking based on verified sign-ups.
+* **Email Automation:** Two-stage flow (Verification → Success + Referral Link).
+
+### 2. The Platform Phase (Post-Launch)
+* **Artist Profiles:** Next.js ISR (Incremental Static Regeneration) for SEO-optimized landing pages at `nawemusic.auraworks.co.za/artist-name`.
+* **PWA Integration:** Service workers to allow "Add to Home Screen" functionality.
+* **Connectivity:** Direct messaging for contractors and fan notification systems.
+* **Embed Layer:** Spotify/YouTube API integrations.
+
+---
+
+## 🛠️ Technical Stack & Dependencies
+
+| Layer | Tool | Purpose |
+| :--- | :--- | :--- |
+| **Frontend** | Next.js 14/15 (App Router) | High SEO performance and PWA capabilities. |
+| **Backend** | FastAPI | High-speed Python framework for referral logic. |
+| **Database** | SQLModel (PostgreSQL) | Type-safe ORM combining SQLAlchemy and Pydantic. |
+| **Styling** | Tailwind CSS + Framer Motion | Rapid UI development and leaderboard animations. |
+| **Email** | Resend / Mailgun | Transactional emails for verification and referral updates. |
+| **Deployment** | Render | Managed hosting for both the Frontend and Backend. |
+| **Auth/Security** | JWT (JSON Web Tokens) | Secure email verification and affiliate link tracking. |
+
+---
+
+## 🚀 Execution Plan (6-Step Roadmap)
+
+### Phase 1: Data Modeling & Backend (Week 1)
+* Initialize **SQLModel** with the `User` schema (including `referrer_id`).
+* Build the FastAPI endpoint `/join` to handle initial signups.
+* Implement the **Referral Logic**: Generate a 6-character alphanumeric slug for each user.
+
+### Phase 2: Frontend & Multi-Step Form (Week 1)
+* Set up the Next.js project with a single-section Hero.
+* Build the **Onboarding Modal** using a state machine (Step 1 → 2 → 3 → 4).
+* Integrate `localStorage` to persist the `ref` code if a user arrives via an affiliate link.
+
+### Phase 3: The Verification Loop (Week 2)
+* Configure **Resend** to fire a "Verify Email" trigger upon signup.
+* Create a `/verify` route in Next.js that calls the backend to flip `is_verified` to `true`.
+* **Automated Payout/Credit Logic:** Calculate the 30% commission potential and store it in the user's dashboard view.
+
+### Phase 4: Dynamic Leaderboard (Week 2)
+* Create a backend route `/leaderboard` that aggregates verified referrals.
+* Frontend: Use **SWR** or **React Query** to fetch leaderboard data every 60 seconds.
+* Apply **Framer Motion's** `layout` prop to the list items so they physically slide into new positions when the rankings change.
+
+### Phase 5: PWA & SEO Setup (Week 3)
+* Configure `manifest.json` and icons for the PWA.
+* Set up OpenGraph (OG) tags so when artists share their referral links on social media, a beautiful preview card appears.
+
+### Phase 6: Deployment (Week 3)
+* Deploy the Database (PostgreSQL) on Render.
+* Connect the GitHub repo to Render for auto-deployments.
+* Map the subdomain `nawemusic.auraworks.co.za` to the Render instance.
+
+---
+
+## 📈 The Affiliate Logic Flow
+
+To ensure this is "legally binding" and clean, the flow follows this sequence:
+
+1.  **User A** signs up → Receives verification email.
+2.  **User A** clicks link → Redirected to `/dashboard` → Referral link is revealed: `nawemusic.auraworks.co.za?ref=USERA`.
+3.  **User B** visits link → Cookie stores `ref=USERA`.
+4.  **User B** signs up → Backend checks cookie → Assigns **User A** as the referrer.
+5.  **User B** verifies email → **User A** gets +1 verified referral.
+
+---
+
+## 💡 Discussion: Manual vs. Automated Verification
+
+For a South African context where you want to maintain high quality:
+* **The Recommendation:** Use **Automated Email Verification** (Magic Link) for the general waitlist.
+* **Manual Verification:** Keep this only for the **Top 10 Committee**. Before officially awarding stocks or lifetime access, you should manually vet their profiles to ensure they didn't use bot-farms to juice their referral numbers.
+
+Does this timeline and logic align with your development capacity, or should we look at simplifying the referral tracking for the initial MVP?
+</file>
+
+<file path="backend/app/core/config.py">
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    PROJECT_NAME: str = "NaweMusic Master Seed"
+    # Local SQLite for offline development
+    DATABASE_URL: str = "sqlite:///./aura_local.db" 
+
+settings = Settings()
+</file>
+
+<file path="backend/app/main.py">
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# Add this to your main.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://nawemusic.auraworks.co.za", 
+        "http://localhost:3000" # Keep for local testing
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+</file>
+
+</files>
