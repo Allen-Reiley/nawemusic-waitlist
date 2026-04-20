@@ -10,6 +10,16 @@
 !.yarn/releases
 !.yarn/versions
 
+frontend/node_modules/
+.next/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
 # testing
 /coverage
 
