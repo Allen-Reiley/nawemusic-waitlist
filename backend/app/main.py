@@ -17,7 +17,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://nawemusic.auraworks.co.za", 
-        "http://localhost:3000" 
+        "http://localhost:3000",
+        "nawemusic@auraworks.co.za",
+        "nawemusic-waitlist-izi23lolp-allen-reileys-projects.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
