@@ -2,32 +2,61 @@
 import { useState } from 'react';
 import Hero from '@/components/ui/animated-shader-hero';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useReferral } from '@/hooks/useReferral';
+import api from '@/lib/api';
 
 export default function Page() {
   const [step, setStep] = useState(0); 
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleJoinWaitlist = () => {
+  // Captures ?ref= from URL or LocalStorage automatically
+  const referralCode = useReferral();
+
+  const handleJoinWaitlist = async () => {
     setError(null);
+    setIsLoading(true);
     
+    // Basic sanitization
     const cleanName = formData.name.replace(/<[^>]*>?/gm, '').trim();
-    const cleanEmail = formData.email.replace(/<[^>]*>?/gm, '').trim();
-  
+    const cleanEmail = formData.email.replace(/<[^>]*>?/gm, '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   
     if (cleanName.length < 2) {
       setError("Please enter your full name.");
+      setIsLoading(false);
       return;
     }
   
     if (!emailRegex.test(cleanEmail)) {
       setError("Please enter a valid email address.");
+      setIsLoading(false);
       return;
     }
   
-    setFormData({ name: cleanName, email: cleanEmail });
-    setStep(1);
+    try {
+      // Logic: POST body contains the user info, params contains the referral link
+      await api.post('/join', 
+        { 
+          full_name: cleanName, 
+          email: cleanEmail 
+        }, 
+        { 
+          params: { ref: referralCode || undefined } 
+        }
+      );
+
+      // Transition to onboarding slides upon success
+      setFormData({ name: cleanName, email: cleanEmail });
+      setStep(1);
+    } catch (err: any) {
+      // Handle specific FastAPI HTTPException details
+      const msg = err.response?.data?.detail || "Registration failed. Please try again.";
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -38,12 +67,11 @@ export default function Page() {
           line2: "Join The Waitlist"
         }}
         subtitle="Stop renting your audience from social media—start owning it. Your music. Your audience. Your way."
-        className={step > 0 ? "blur-md scale-95 transition-all duration-700" : ""}
+        className={step > 0 ? "blur-md scale-95 transition-all duration-700" : "transition-all duration-700"}
       />
 
       {/* Hero Input Section */}
       {step === 0 && (
-        /* Changed from 'absolute bottom-0' to 'relative' with negative margin to follow document flow while staying elevated */
         <div className="relative z-30 flex flex-col items-center p-6 pb-12 md:pb-20 mt-[-14rem] min-[444px]:mt-[-13rem] sm:mt-[-12rem] md:mt-[-10rem] lg:mt-[-12rem]">
           <motion.div 
             initial={{ y: 20, opacity: 0 }}
@@ -54,7 +82,9 @@ export default function Page() {
               placeholder="Full Name" 
               type="text"
               maxLength={50}
-              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
+              disabled={isLoading}
+              autoComplete="name"
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
               onChange={(e) => {
                 setError(null);
                 setFormData({...formData, name: e.target.value});
@@ -64,7 +94,9 @@ export default function Page() {
               placeholder="Email Address" 
               type="email" 
               required
-              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
+              disabled={isLoading}
+              autoComplete="email"
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
               onChange={(e) => {
                 setError(null);
                 setFormData({...formData, email: e.target.value});
@@ -72,10 +104,14 @@ export default function Page() {
             />
             <button 
               onClick={handleJoinWaitlist}
-              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!formData.name || !formData.email}
+              disabled={!formData.name || !formData.email || isLoading}
+              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[160px]"
             >
-              Secure My Spot
+              {isLoading ? (
+                <div className="h-5 w-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+              ) : (
+                "Secure My Spot"
+              )}
             </button>
           </motion.div>
 
@@ -107,7 +143,7 @@ export default function Page() {
               layout
               className="relative bg-[#0a0a0a] border border-white/10 p-8 md:p-12 rounded-[2rem] max-w-xl w-full text-white shadow-2xl overflow-hidden"
             >
-              {/* Progress Dots */}
+              {/* Progress Indicator */}
               <div className="absolute top-8 right-8 flex gap-2">
                 {[1, 2, 3, 4].map((i) => (
                   <div 
@@ -117,7 +153,6 @@ export default function Page() {
                 ))}
               </div>
 
-              {/* Content Slides */}
               <div className="min-h-[280px] flex flex-col justify-center">
                 <AnimatePresence mode="wait">
                   {step === 1 && (
@@ -162,12 +197,12 @@ export default function Page() {
 
                         <div className="bg-white/5 border-l-2 border-orange-500 p-4 rounded-r-xl">
                           <p className="text-sm text-white/80">
-                            <span className="text-orange-400 font-bold">Note:</span> At launch, nawemusic will be <b>R500/year</b>. 
-                            Top referrers on the Committee will bypass this fee, gain early access to test new tools, and directly suggest features for the roadmap.
+                            <span className="text-orange-400 font-bold">Note:</span> At launch, NaweMusic will be <b>R500/year</b>. 
+                            Top referrers on the Committee will bypass this fee and gain early access to the roadmap.
                           </p>
                         </div>
 
-                        <p className="text-white/40 text-xs italic pt-2">
+                        <p className="text-white/40 text-[10px] italic pt-2">
                           Verify your email now to activate your account and secure your affiliate link.
                         </p>
                       </div>
@@ -176,7 +211,6 @@ export default function Page() {
                 </AnimatePresence>
               </div>
 
-              {/* Navigation Buttons */}
               <div className="flex flex-col md:flex-row-reverse gap-3 mt-10">
                 <button 
                   onClick={() => step < 4 ? setStep(s => s + 1) : setStep(0)}

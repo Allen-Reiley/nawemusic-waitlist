@@ -1,0 +1,19 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "emails>=1.1.1",
+    "fastapi>=0.136.0",
+    "jinja2>=3.1.6",
+    "passlib[bcrypt]>=1.7.4",
+    "pydantic-settings>=2.14.0",
+    "pyjwt>=2.12.1",
+    "python-jose[cryptography]>=3.5.0",
+    "python-multipart>=0.0.26",
+    "resend>=2.29.0",
+    "sqlmodel>=0.0.38",
+    "uvicorn[standard]>=0.45.0",
+]
