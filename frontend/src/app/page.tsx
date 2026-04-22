@@ -1,11 +1,18 @@
 'use client';
-import { useState } from 'react';
+
+import { useState, Suspense } from 'react';
 import Hero from '@/components/ui/animated-shader-hero';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReferral } from '@/hooks/useReferral';
 import api from '@/lib/api';
 
-export default function Page() {
+/**
+ * LandingPageContent: 
+ * Extracted logic to allow for a Suspense boundary.
+ * This prevents the build from crashing when useReferral 
+ * accesses search parameters.
+ */
+function LandingPageContent() {
   const [step, setStep] = useState(0); 
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +43,7 @@ export default function Page() {
     }
   
     try {
-      // POST body contains user info, params contains the referral code
+      // POST body maps 'name' to 'full_name' for your SQLModel
       await api.post('/join', 
         { 
           full_name: cleanName, 
@@ -47,7 +54,6 @@ export default function Page() {
         }
       );
 
-      // Transition to onboarding slides upon success
       setFormData({ name: cleanName, email: cleanEmail });
       setStep(1);
     } catch (err: any) {
@@ -129,7 +135,7 @@ export default function Page() {
         </div>
       )}
 
-      {/* Onboarding Modal */}
+      {/* Onboarding Modal - Consistent with "Quiet Premium" branding */}
       <AnimatePresence mode="wait">
         {step > 0 && (
           <motion.div 
@@ -163,7 +169,7 @@ export default function Page() {
                     <motion.div key="s2" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
                       <h3 className="text-3xl font-bold mb-4 text-orange-400">Join the Revolution</h3>
                       <p className="text-white/70 text-lg leading-relaxed">
-                        Spread the word and earn a 30% one-time commission for every verified artist you bring in. Signaling a change in the industry starts with you.
+                        Spread the word and earn a 30% one-time commission for every verified artist you bring in.
                       </p>
                     </motion.div>
                   )}
@@ -208,15 +214,21 @@ export default function Page() {
                   </button>
                 )}
               </div>
-
-              <div className="flex flex-col items-center mt-8 pt-6 border-t border-white/5 text-center">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-white/20">A Project by</p>
-                <p className="text-sm font-bold text-white/40 mt-1 uppercase tracking-wider">AuraWorks (Pty) Ltd</p>
-              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+/**
+ * Main Export wrapped in Suspense to satisfy Next.js Build Requirements
+ */
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <LandingPageContent />
+    </Suspense>
   );
 }
