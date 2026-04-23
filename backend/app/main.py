@@ -1,7 +1,8 @@
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.core.db import get_session, init_db
@@ -17,7 +18,6 @@ app.add_middleware(
     allow_origins=[
         "https://nawemusic.auraworks.co.za", 
         "http://localhost:3000",
-        # Added the required protocol prefix here
         "https://nawemusic-waitlist-izi23lolp-allen-reileys-projects.vercel.app"
     ],
     allow_credentials=True,
@@ -62,7 +62,7 @@ async def join_waitlist(
         raise HTTPException(status_code=500, detail="Database error.")
     
     token = auth.create_verification_token(user_data.email)
-    verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
+    verification_link = f"{settings.FRONTEND_URL}/invites?token={token}"
     
     try:
         send_verification_email(
@@ -82,25 +82,69 @@ async def join_waitlist(
 @app.get("/admin/stats")
 async def get_admin_stats(session: Session = Depends(get_session)):
     """
-    Returns full user list with count of verified referrals per user.
-    Note: Secure this with an Admin API Key in production.
+    Returns unified data for the Growth Intelligence dashboard:
+    1. User Ledger
+    2. KPI Metrics (Visits, Signups, Conversion, Avg Referrals)
+    3. Time-series chart data for the last 7 days
     """
-    # This query joins the User table with itself to count referrals
-    users = session.exec(select(User)).all()
+    # 1. Fetch all users
+    users = session.exec(select(User).order_by(User.created_at.desc())).all()
+    total_signups = len(users)
     
-    user_list = []
-    for user in users:
-        # Count how many users were referred by this specific ID
+    # 2. Traffic Placeholder (Link to Vercel/PageVisit table later)
+    total_visits = 1210 # Placeholder constant for now
+    
+    formatted_users = []
+    total_verified_invites = 0
+    
+    for u in users:
+        # Count verified referrals for this user
         invite_count = session.exec(
-            select(func.count(User.id)).where(User.referred_by_id == user.id, User.is_verified == True)
+            select(func.count(User.id)).where(
+                User.referred_by_id == u.id, 
+                User.is_verified == True
+            )
         ).one()
         
-        user_list.append({
-            "full_name": user.full_name,
-            "email": user.email,
-            "referral_code": user.referral_code,
-            "is_verified": user.is_verified,
+        total_verified_invites += invite_count
+        
+        formatted_users.append({
+            "full_name": u.full_name,
+            "email": u.email,
+            "referral_code": u.referral_code,
+            "is_verified": u.is_verified,
             "invite_count": invite_count
         })
+
+    # 3. KPI Calculations
+    avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
+    conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
+
+    # 4. Generate 7-Day Chart Data
+    chart_data = []
+    for i in range(6, -1, -1):
+        target_date = (datetime.utcnow() - timedelta(days=i)).date()
         
-    return {"users": user_list}
+        # Count signups that happened on this specific day
+        day_signups = session.exec(
+            select(func.count(User.id)).where(
+                func.date(User.created_at) == target_date
+            )
+        ).one()
+        
+        chart_data.append({
+            "date": target_date.strftime("%b %d"),
+            "Visits": 100 + (i * 15), # Placeholder visit trend
+            "Signups": day_signups
+        })
+
+    return {
+        "users": formatted_users,
+        "stats": {
+            "total_visits": total_visits,
+            "total_signups": total_signups,
+            "conversion_rate": conv_rate,
+            "avg_referrals": avg_referrals
+        },
+        "chartData": chart_data
+    }

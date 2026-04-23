@@ -59,6 +59,8 @@ frontend/
   src/
     app/
       (pages)/
+        dashboard/
+          page.tsx
         invite/
           page.tsx
       layout.tsx
@@ -73,6 +75,7 @@ frontend/
       api.ts
       utils.ts
     next.config.ts
+    tailwind.config.ts
 docker-compose.yml
 REMEMBER.md
 </directory_structure>
@@ -304,10 +307,11 @@ def send_verification_email(email: str, full_name: str, verification_link: str):
 </file>
 
 <file path="backend/app/main.py">
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from app.core.db import get_session, init_db
@@ -318,8 +322,6 @@ from app.services.email import send_verification_email
 
 app = FastAPI(title="NaweMusic API")
 
-# CORS configuration
-# Note: origins must be URLs (including https://). Emails are not valid origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -332,20 +334,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register the Auth router so /auth/verify/{token} is active
 app.include_router(auth.router)
 
 @app.on_event("startup")
 def on_startup():
-    """Initializes the database connection on startup."""
     init_db()
 
 @app.get("/")
 async def root():
-    """
-    Health check endpoint for Render. 
-    A 200 OK here prevents the 'Build Failed' error.
-    """
     return {"status": "online", "service": "NaweMusic Backend"}
 
 @app.post("/join")
@@ -354,40 +350,29 @@ async def join_waitlist(
     ref: Optional[str] = None, 
     session: Session = Depends(get_session)
 ):
-    """
-    Handles initial waitlist signup, referral attribution, 
-    and triggers the verification email with full Terms & Conditions.
-    """
-    # 1. Prevent duplicate signups
     statement = select(User).where(User.email == user_data.email)
     existing_user = session.exec(statement).first()
     
     if existing_user:
         raise HTTPException(status_code=400, detail="This email is already on the list.")
 
-    # 2. Handle Referral Logic (Logic-driven attribution)
     if ref:
         ref_statement = select(User).where(User.referral_code == ref)
         referrer = session.exec(ref_statement).first()
         if referrer:
             user_data.referred_by_id = referrer.id
 
-    # 3. Save the new lead
     try:
         session.add(user_data)
         session.commit()
         session.refresh(user_data)
-    except Exception as e:
+    except Exception:
         session.rollback()
-        raise HTTPException(status_code=500, detail="Database error during signup.")
+        raise HTTPException(status_code=500, detail="Database error.")
     
-    # 4. Generate Verification Token & Link
     token = auth.create_verification_token(user_data.email)
+    verification_link = f"{settings.FRONTEND_URL}/invites?token={token}"
     
-    # settings.FRONTEND_URL must be set in Render env to https://nawemusic.auraworks.co.za
-    verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
-    
-    # 5. Trigger the Email Service (Now containing the full legal T&Cs)
     try:
         send_verification_email(
             email=user_data.email,
@@ -395,19 +380,250 @@ async def join_waitlist(
             verification_link=verification_link
         )
     except Exception as e:
-        # We don't fail the request if email fails, but we log it for debugging
-        print(f"RESEND SERVICE ERROR: {e}")
+        print(f"RESEND ERROR: {e}")
     
     return {
         "status": "success",
         "referral_code": user_data.referral_code,
-        "message": "Spot secured! Please check your email to verify your account."
+        "message": "Spot secured! Check your email."
     }
 
-@app.get("/leaderboard")
-async def get_leaderboard(session: Session = Depends(get_session)):
-    """Placeholder for Phase 4: High-level leaderboard rankings."""
-    return {"message": "Leaderboard logic coming in Phase 4"}
+@app.get("/admin/stats")
+async def get_admin_stats(session: Session = Depends(get_session)):
+    """
+    Returns unified data for the Growth Intelligence dashboard:
+    1. User Ledger
+    2. KPI Metrics (Visits, Signups, Conversion, Avg Referrals)
+    3. Time-series chart data for the last 7 days
+    """
+    # 1. Fetch all users
+    users = session.exec(select(User).order_by(User.created_at.desc())).all()
+    total_signups = len(users)
+    
+    # 2. Traffic Placeholder (Link to Vercel/PageVisit table later)
+    total_visits = 1210 # Placeholder constant for now
+    
+    formatted_users = []
+    total_verified_invites = 0
+    
+    for u in users:
+        # Count verified referrals for this user
+        invite_count = session.exec(
+            select(func.count(User.id)).where(
+                User.referred_by_id == u.id, 
+                User.is_verified == True
+            )
+        ).one()
+        
+        total_verified_invites += invite_count
+        
+        formatted_users.append({
+            "full_name": u.full_name,
+            "email": u.email,
+            "referral_code": u.referral_code,
+            "is_verified": u.is_verified,
+            "invite_count": invite_count
+        })
+
+    # 3. KPI Calculations
+    avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
+    conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
+
+    # 4. Generate 7-Day Chart Data
+    chart_data = []
+    for i in range(6, -1, -1):
+        target_date = (datetime.utcnow() - timedelta(days=i)).date()
+        
+        # Count signups that happened on this specific day
+        day_signups = session.exec(
+            select(func.count(User.id)).where(
+                func.date(User.created_at) == target_date
+            )
+        ).one()
+        
+        chart_data.append({
+            "date": target_date.strftime("%b %d"),
+            "Visits": 100 + (i * 15), # Placeholder visit trend
+            "Signups": day_signups
+        })
+
+    return {
+        "users": formatted_users,
+        "stats": {
+            "total_visits": total_visits,
+            "total_signups": total_signups,
+            "conversion_rate": conv_rate,
+            "avg_referrals": avg_referrals
+        },
+        "chartData": chart_data
+    }
+</file>
+
+<file path="frontend/src/app/(pages)/dashboard/page.tsx">
+'use client';
+
+import { useState, useEffect } from 'react';
+import { 
+  Card, 
+  Text, 
+  Metric, 
+  AreaChart, 
+  Table, 
+  TableHead, 
+  TableRow, 
+  TableHeaderCell, 
+  TableBody, 
+  TableCell, 
+  Badge,
+  Flex,
+  Grid,
+  Icon
+} from '@tremor/react';
+import { Users, MousePointerClick, UserCheck, Share2, Loader2 } from 'lucide-react';
+import api from '@/lib/api';
+
+interface DashboardData {
+  users: Array<{
+    full_name: string;
+    email: string;
+    referral_code: string;
+    is_verified: boolean;
+    invite_count: number;
+  }>;
+  stats: {
+    total_visits: number;
+    total_signups: number;
+    conversion_rate: number;
+    avg_referrals: number;
+  };
+  chartData: Array<{
+    date: string;
+    Visits: number;
+    Signups: number;
+  }>;
+}
+
+export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchDashboardData = async () => {
+    try {
+      const response = await api.get('/admin/stats');
+      setData(response.data);
+    } catch (err) {
+      console.error("Failed to fetch live dashboard data", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (loading || !data) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+      </div>
+    );
+  }
+
+  return (
+    <main className="p-6 md:p-10 bg-black min-h-screen text-white">
+      <div className="max-w-7xl mx-auto space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Growth Intelligence</h1>
+          <Text className="text-neutral-500 mt-1 font-medium">AuraWorks Live Performance</Text>
+        </div>
+
+        {/* Top Level KPIs */}
+        <Grid numItemsSm={2} numItemsLg={4} className="gap-6">
+          <StatCard title="Total Visits" value={data.stats.total_visits.toLocaleString()} icon={MousePointerClick} />
+          <StatCard title="Total Signups" value={data.stats.total_signups} icon={Users} />
+          <StatCard title="Conv. Rate" value={`${data.stats.conversion_rate}%`} icon={UserCheck} />
+          <StatCard title="Avg. Referrals" value={data.stats.avg_referrals.toFixed(2)} icon={Share2} />
+        </Grid>
+
+        {/* Acquisition Trend */}
+        <Card className="bg-neutral-900 border-neutral-800 p-8">
+          <Text className="text-white font-bold text-lg">Acquisition Trend</Text>
+          <AreaChart
+            className="h-80 mt-8"
+            data={data.chartData}
+            index="date"
+            categories={["Visits", "Signups"]}
+            colors={["slate", "orange"]}
+            showLegend={true}
+            showGridLines={false}
+            curveType="monotone"
+            valueFormatter={(number: number) => Intl.NumberFormat("en-US").format(number)}
+          />
+        </Card>
+
+        {/* Detailed User Table */}
+        <Card className="bg-neutral-900 border-neutral-800 p-0 overflow-hidden">
+          <div className="p-8 border-b border-white/5">
+             <Text className="text-white font-bold text-lg">Verification Ledger</Text>
+          </div>
+          <Table>
+            <TableHead className="bg-white/[0.02]">
+              <TableRow className="border-neutral-800">
+                <TableHeaderCell className="text-neutral-400 pl-8 font-semibold uppercase tracking-wider text-[10px]">Identity</TableHeaderCell>
+                <TableHeaderCell className="text-neutral-400 font-semibold uppercase tracking-wider text-[10px]">Referral Code</TableHeaderCell>
+                <TableHeaderCell className="text-neutral-400 text-center font-semibold uppercase tracking-wider text-[10px]">Invites</TableHeaderCell>
+                <TableHeaderCell className="text-neutral-400 pr-8 font-semibold uppercase tracking-wider text-[10px]">Status</TableHeaderCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {data.users.map((item) => (
+                <TableRow key={item.email} className="border-neutral-800 hover:bg-white/[0.01] transition-colors">
+                  <TableCell className="pl-8">
+                    <div className="flex flex-col">
+                      <span className="text-white font-semibold">{item.full_name}</span>
+                      <span className="text-neutral-500 text-xs">{item.email}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <code className="text-orange-500 font-mono text-xs bg-orange-500/5 px-2 py-1 rounded">
+                      {item.referral_code}
+                    </code>
+                  </TableCell>
+                  <TableCell className="text-white text-center font-medium">
+                    {item.invite_count}
+                  </TableCell>
+                  <TableCell className="pr-8">
+                    <Badge 
+                      color={item.is_verified ? "green" : "orange"} 
+                      className="bg-opacity-10 border-none font-bold uppercase text-[10px] tracking-widest"
+                    >
+                      {item.is_verified ? "Verified" : "Pending"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      </div>
+    </main>
+  );
+}
+
+function StatCard({ title, value, icon }: { title: string, value: string | number, icon: any }) {
+  return (
+    <Card className="bg-neutral-900 border-neutral-800" decoration="top" decorationColor="orange">
+      <Flex justifyContent="start" className="space-x-4">
+        <Icon icon={icon} variant="simple" color="slate" />
+        <Text className="text-neutral-400 font-medium">{title}</Text>
+      </Flex>
+      <Metric className="text-white mt-2 font-bold">{value}</Metric>
+    </Card>
+  );
+}
 </file>
 
 <file path="frontend/src/app/(pages)/invite/page.tsx">
@@ -416,7 +632,7 @@ async def get_leaderboard(session: Session = Depends(get_session)):
 import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Copy, CheckCircle2, Loader2, Share2 } from 'lucide-react';
+import { Copy, CheckCircle2, Loader2, Share2, AlertCircle } from 'lucide-react';
 import { verifyEmailToken } from '@/lib/api';
 
 function InviteContent() {
@@ -460,23 +676,24 @@ function InviteContent() {
 
   if (status === 'loading') {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
-        <p className="mt-4 text-neutral-500 font-medium">Verifying your credentials...</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 text-center">
+        <Loader2 className="w-10 h-10 animate-spin text-orange-500 mb-4" />
+        <p className="text-neutral-400 font-medium tracking-tight">Verifying your credentials...</p>
       </div>
     );
   }
 
   if (status === 'error') {
     return (
-      <div className="max-w-md mx-auto text-center py-20">
-        <h1 className="text-2xl font-bold text-white mb-4">Link Expired</h1>
-        <p className="text-neutral-400 mb-8">
-          This verification link is no longer valid or has already been used.
+      <div className="max-w-sm mx-auto text-center py-20 px-6">
+        <AlertCircle className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+        <h1 className="text-xl font-bold text-white mb-2">Link Expired</h1>
+        <p className="text-neutral-400 text-sm mb-8 leading-relaxed">
+          This verification link is no longer valid or has already been used. Please try signing up again.
         </p>
         <button 
           onClick={() => router.push('/')}
-          className="px-6 py-2 bg-white text-black rounded-full font-semibold"
+          className="w-full py-3 bg-white text-black rounded-xl font-bold transition-transform active:scale-95"
         >
           Return Home
         </button>
@@ -488,48 +705,57 @@ function InviteContent() {
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="max-w-2xl mx-auto py-12 px-6"
+      className="w-full max-w-2xl mx-auto py-8 md:py-12 px-6"
     >
-      <div className="text-center mb-12">
-        <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-6" />
-        <h1 className="text-4xl font-bold text-white mb-4">You&apos;re in the Seed.</h1>
-        <p className="text-neutral-400 text-lg">
-          Your account is verified. You are now eligible for the Founding Committee.
+      <div className="text-center mb-8 md:mb-12">
+        <div className="relative inline-block mb-6">
+            <CheckCircle2 className="w-12 h-12 md:w-16 md:h-16 text-orange-500 mx-auto" />
+            <motion.div 
+                initial={{ scale: 0 }} 
+                animate={{ scale: 1 }} 
+                className="absolute inset-0 bg-orange-500/20 blur-xl rounded-full"
+            />
+        </div>
+        <h1 className="text-3xl md:text-4xl font-bold text-white mb-3 md:mb-4 tracking-tight">
+            You&apos;re in the Seed.
+        </h1>
+        <p className="text-neutral-400 text-sm md:text-lg leading-relaxed max-w-md mx-auto">
+          Your account is verified. You are now eligible for the <span className="text-white">Founding Committee</span>.
         </p>
       </div>
 
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 mb-8">
-        <h3 className="text-sm font-semibold text-neutral-500 uppercase tracking-widest mb-6">
+      <div className="bg-neutral-900/50 backdrop-blur-sm border border-white/5 rounded-[2rem] p-6 md:p-8 mb-8">
+        <h3 className="text-[10px] font-bold text-neutral-500 uppercase tracking-[0.2em] mb-4 md:mb-6">
           Your Personal Invitation Link
         </h3>
         
-        <div className="flex items-center gap-2 p-4 bg-black border border-neutral-800 rounded-xl mb-6">
-          <code className="flex-1 text-sm text-neutral-300 truncate">
+        <div className="flex items-center gap-3 p-3 md:p-4 bg-black/50 border border-white/10 rounded-xl mb-6 overflow-hidden">
+          <code className="flex-1 text-xs md:text-sm text-neutral-300 truncate font-mono">
             {referralLink}
           </code>
           <button 
             onClick={copyToClipboard}
-            className="p-2 hover:bg-neutral-800 rounded-lg transition-colors"
+            className="p-2.5 bg-white/5 hover:bg-white/10 rounded-lg transition-all active:scale-90 flex-shrink-0"
           >
-            {copied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5 text-neutral-400" />}
+            {copied ? <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5 text-orange-500" /> : <Copy className="w-4 h-4 md:w-5 md:h-5 text-neutral-400" />}
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 bg-neutral-800/50 rounded-xl border border-neutral-700/50">
-            <p className="text-xs text-neutral-500 mb-1">Current Standing</p>
-            <p className="text-xl font-bold text-white">#--</p>
+        <div className="grid grid-cols-2 gap-3 md:gap-4">
+          <div className="p-4 bg-white/[0.02] rounded-2xl border border-white/5">
+            <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Standing</p>
+            <p className="text-lg md:text-xl font-bold text-white">#--</p>
           </div>
-          <div className="p-4 bg-neutral-800/50 rounded-xl border border-neutral-700/50">
-            <p className="text-xs text-neutral-500 mb-1">Verified Referrals</p>
-            <p className="text-xl font-bold text-white">0</p>
+          <div className="p-4 bg-white/[0.02] rounded-2xl border border-white/5">
+            <p className="text-[10px] uppercase tracking-wider text-neutral-500 mb-1">Verified</p>
+            <p className="text-lg md:text-xl font-bold text-white">0</p>
           </div>
         </div>
       </div>
 
       <div className="text-center">
-        <p className="text-neutral-500 text-sm mb-6 flex items-center justify-center gap-2">
-          <Share2 className="w-4 h-4" /> Share this link to climb the leaderboard.
+        <p className="text-neutral-500 text-xs md:text-sm mb-6 flex items-center justify-center gap-2">
+          <Share2 className="w-3.5 h-3.5" /> Share this link to climb the leaderboard.
         </p>
       </div>
     </motion.div>
@@ -539,7 +765,7 @@ function InviteContent() {
 export default function InvitePage() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-black" />}>
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+      <main className="min-h-screen bg-black text-white flex items-start md:items-center justify-center pt-12 md:pt-0">
         <InviteContent />
       </main>
     </Suspense>
@@ -551,6 +777,7 @@ export default function InvitePage() {
 import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "./providers"; // Import our new provider
+import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   title: "NaweMusic Waitlist",
@@ -566,6 +793,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );
@@ -574,33 +802,27 @@ export default function RootLayout({
 
 <file path="frontend/src/app/page.tsx">
 'use client';
-
-import { useState, Suspense } from 'react';
+import { useState, Suspense } from 'react'; // Added Suspense import
 import Hero from '@/components/ui/animated-shader-hero';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReferral } from '@/hooks/useReferral';
 import api from '@/lib/api';
 
-/**
- * LandingPageContent: 
- * Extracted logic to allow for a Suspense boundary.
- * This prevents the build from crashing when useReferral 
- * accesses search parameters.
- */
-function LandingPageContent() {
+// 1. Move the core logic into a separate component to wrap it in Suspense
+function WaitlistContent() {
   const [step, setStep] = useState(0); 
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Captures ?ref= from URL or LocalStorage automatically
+  // This hook requires a Suspense boundary in Next.js
   const referralCode = useReferral();
 
   const handleJoinWaitlist = async () => {
     setError(null);
     setIsLoading(true);
     
-    // Basic sanitization
     const cleanName = formData.name.replace(/<[^>]*>?/gm, '').trim();
     const cleanEmail = formData.email.replace(/<[^>]*>?/gm, '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -618,7 +840,6 @@ function LandingPageContent() {
     }
   
     try {
-      // POST body maps 'name' to 'full_name' for your SQLModel
       await api.post('/join', 
         { 
           full_name: cleanName, 
@@ -640,7 +861,7 @@ function LandingPageContent() {
   };
 
   return (
-    <main className="relative min-h-screen bg-black overflow-x-hidden">
+    <>
       <Hero 
         headline={{
           line1: "Own Your Fanbase",
@@ -663,6 +884,7 @@ function LandingPageContent() {
               type="text"
               maxLength={50}
               disabled={isLoading}
+              autoComplete="name"
               className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
               onChange={(e) => {
                 setError(null);
@@ -674,6 +896,7 @@ function LandingPageContent() {
               type="email" 
               required
               disabled={isLoading}
+              autoComplete="email"
               className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
               onChange={(e) => {
                 setError(null);
@@ -683,7 +906,7 @@ function LandingPageContent() {
             <button 
               onClick={handleJoinWaitlist}
               disabled={!formData.name || !formData.email || isLoading}
-              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 min-w-[160px]"
+              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[160px]"
             >
               {isLoading ? (
                 <div className="h-5 w-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
@@ -710,7 +933,7 @@ function LandingPageContent() {
         </div>
       )}
 
-      {/* Onboarding Modal - Consistent with "Quiet Premium" branding */}
+      {/* Multi-Step Onboarding Modal */}
       <AnimatePresence mode="wait">
         {step > 0 && (
           <motion.div 
@@ -736,7 +959,7 @@ function LandingPageContent() {
                     <motion.div key="s1" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
                       <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent">The Philosophy</h3>
                       <p className="text-white/70 text-lg leading-relaxed">
-                        NaweMusic is the bridge between your craft and your community. We’re moving music off the social media feed and onto your own terms.
+                        NaweMusic is the bridge between your craft and your community. We’re moving music off the social media feed and onto your own terms. Sell tickets, host events, and talk to your fans directly on a platform you actually control.
                       </p>
                     </motion.div>
                   )}
@@ -744,28 +967,43 @@ function LandingPageContent() {
                     <motion.div key="s2" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
                       <h3 className="text-3xl font-bold mb-4 text-orange-400">Join the Revolution</h3>
                       <p className="text-white/70 text-lg leading-relaxed">
-                        Spread the word and earn a 30% one-time commission for every verified artist you bring in.
+                        We are building a network of premium artists. Spread the word and earn a 30% one-time commission for every verified artist you bring in. Inviting others isn’t just sharing a link—it’s signaling a change in the industry.
                       </p>
                     </motion.div>
                   )}
                   {step === 3 && (
                     <motion.div key="s3" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
                       <h3 className="text-3xl font-bold mb-4 text-orange-400">Founding Committee</h3>
-                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-white/70">
+                      <p className="text-white/60 mb-6 font-medium">The top 10 referrers gain shareholder-level influence:</p>
+                      <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Lifetime Free Access</li>
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Performance Ownership</li>
                         <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Feature Voting Power</li>
+                        <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Recurring Content Sponsoring</li>
                       </ul>
                     </motion.div>
                   )}
                   {step === 4 && (
                     <motion.div key="s4" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
                       <h3 className="text-3xl font-bold mb-4 text-orange-400">Final Verification</h3>
-                      <p className="text-white/70 text-lg mb-4">
-                        Secure link sent to <span className="text-orange-400 font-semibold">{formData.email}</span>.
-                      </p>
-                      <div className="bg-white/5 border-l-2 border-orange-500 p-4 rounded-r-xl">
-                        <p className="text-sm text-white/80">
-                          NaweMusic will launch at <b>R500/year</b>. Top referrers bypass this fee.
+                      <div className="space-y-4">
+                        <p className="text-white/70 text-lg leading-relaxed">
+                          We’ve sent a secure link to <span className="text-orange-400 font-semibold">{formData.email}</span>. 
+                        </p>
+                        
+                        <p className="text-white/60 text-sm leading-relaxed">
+                          The email includes our Terms & Conditions—please read them carefully as they outline your rights and the affiliate commission structure. 
+                        </p>
+
+                        <div className="bg-white/5 border-l-2 border-orange-500 p-4 rounded-r-xl">
+                          <p className="text-sm text-white/80">
+                            <span className="text-orange-400 font-bold">Note:</span> At launch, NaweMusic will be <b>R500/year</b>. 
+                            Top referrers on the Committee will bypass this fee and gain early access to the roadmap.
+                          </p>
+                        </div>
+
+                        <p className="text-white/40 text-[10px] italic pt-2">
+                          Verify your email now to activate your account and secure your affiliate link.
                         </p>
                       </div>
                     </motion.div>
@@ -776,35 +1014,40 @@ function LandingPageContent() {
               <div className="flex flex-col md:flex-row-reverse gap-3 mt-10">
                 <button 
                   onClick={() => step < 4 ? setStep(s => s + 1) : setStep(0)}
-                  className="w-full md:flex-1 bg-orange-500 text-black py-4 rounded-xl font-bold text-lg hover:bg-orange-400 transition-all"
+                  className="w-full md:flex-1 bg-orange-500 text-black py-4 rounded-xl font-bold text-lg hover:bg-orange-400 transition-all active:scale-95"
                 >
                   {step === 4 ? "Done" : "Continue"}
                 </button>
-                {step > 1 && step < 4 && (
+                {step < 4 && (
                    <button 
                     onClick={() => setStep(s => s - 1)} 
-                    className="w-full md:w-auto px-8 text-white/40 py-4 text-sm font-medium hover:text-white"
+                    className="w-full md:w-auto px-8 text-white/40 py-4 text-sm font-medium hover:text-white transition-colors border border-white/5 md:border-transparent rounded-xl"
                   >
                     Go Back
                   </button>
                 )}
               </div>
+
+              <div className="flex flex-col items-center mt-8 pt-6 border-t border-white/5 text-center">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/20">A Project by</p>
+                <p className="text-sm font-bold text-white/40 mt-1 uppercase tracking-wider">AuraWorks (Pty) Ltd</p>
+              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-    </main>
+    </>
   );
 }
 
-/**
- * Main Export wrapped in Suspense to satisfy Next.js Build Requirements
- */
+// 2. Wrap the final Page export in a Suspense boundary
 export default function Page() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
-      <LandingPageContent />
-    </Suspense>
+    <main className="relative min-h-screen bg-black">
+      <Suspense fallback={<div className="fixed inset-0 bg-black z-[100] flex items-center justify-center text-orange-500">Loading Experience...</div>}>
+        <WaitlistContent />
+      </Suspense>
+    </main>
   );
 }
 </file>
@@ -1441,6 +1684,26 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+</file>
+
+<file path="frontend/src/tailwind.config.ts">
+// tailwind.config.ts
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: [
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
+    // Add this line to include Tremor components
+    "./node_modules/@tremor/react/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {
+      // Tremor uses specific colors you can map here if needed
+    },
+  },
+  plugins: [],
+};
+export default config;
 </file>
 
 <file path="docker-compose.yml">
