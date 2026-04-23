@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Header # Added Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -12,6 +12,10 @@ from app.core.config import settings
 from app.services.email import send_verification_email
 
 app = FastAPI(title="NaweMusic API")
+
+# Setup Admin Key from config or env
+# In production, ensure this is a long, random string
+ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY 
 
 app.add_middleware(
     CORSMiddleware,
@@ -80,25 +84,27 @@ async def join_waitlist(
     }
 
 @app.get("/admin/stats")
-async def get_admin_stats(session: Session = Depends(get_session)):
+async def get_admin_stats(
+    session: Session = Depends(get_session),
+    x_admin_key: Optional[str] = Header(None) # Request the header
+):
     """
-    Returns unified data for the Growth Intelligence dashboard:
-    1. User Ledger
-    2. KPI Metrics (Visits, Signups, Conversion, Avg Referrals)
-    3. Time-series chart data for the last 7 days
+    Returns unified data only if a valid X-Admin-Key is provided.
     """
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized access to Growth Intelligence.")
+
     # 1. Fetch all users
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
     
-    # 2. Traffic Placeholder (Link to Vercel/PageVisit table later)
-    total_visits = 1210 # Placeholder constant for now
+    # 2. Traffic Placeholder
+    total_visits = 1210 
     
     formatted_users = []
     total_verified_invites = 0
     
     for u in users:
-        # Count verified referrals for this user
         invite_count = session.exec(
             select(func.count(User.id)).where(
                 User.referred_by_id == u.id, 
@@ -116,16 +122,12 @@ async def get_admin_stats(session: Session = Depends(get_session)):
             "invite_count": invite_count
         })
 
-    # 3. KPI Calculations
     avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
     conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
 
-    # 4. Generate 7-Day Chart Data
     chart_data = []
     for i in range(6, -1, -1):
         target_date = (datetime.utcnow() - timedelta(days=i)).date()
-        
-        # Count signups that happened on this specific day
         day_signups = session.exec(
             select(func.count(User.id)).where(
                 func.date(User.created_at) == target_date
@@ -134,7 +136,7 @@ async def get_admin_stats(session: Session = Depends(get_session)):
         
         chart_data.append({
             "date": target_date.strftime("%b %d"),
-            "Visits": 100 + (i * 15), # Placeholder visit trend
+            "Visits": 100 + (i * 15),
             "Signups": day_signups
         })
 
