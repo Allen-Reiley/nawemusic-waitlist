@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException, Header # Added Header
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -13,8 +13,7 @@ from app.services.email import send_verification_email
 
 app = FastAPI(title="NaweMusic API")
 
-# Setup Admin Key from config or env
-# In production, ensure this is a long, random string
+# Use the key from the updated Settings class
 ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY 
 
 app.add_middleware(
@@ -86,19 +85,24 @@ async def join_waitlist(
 @app.get("/admin/stats")
 async def get_admin_stats(
     session: Session = Depends(get_session),
-    x_admin_key: Optional[str] = Header(None) # Request the header
+    x_admin_key: Optional[str] = Header(None) 
 ):
     """
     Returns unified data only if a valid X-Admin-Key is provided.
+    FastAPI automatically handles the hyphen-to-underscore conversion for headers.
     """
+    # Strict validation against the key defined in core/config.py
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
-        raise HTTPException(status_code=403, detail="Unauthorized access to Growth Intelligence.")
+        raise HTTPException(
+            status_code=403, 
+            detail="Unauthorized: AuraWorks Growth Intelligence Access Denied."
+        )
 
     # 1. Fetch all users
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
     
-    # 2. Traffic Placeholder
+    # 2. Traffic Placeholder (Link to analytics table in Phase 2)
     total_visits = 1210 
     
     formatted_users = []
@@ -122,9 +126,11 @@ async def get_admin_stats(
             "invite_count": invite_count
         })
 
+    # 3. Calculations
     avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
     conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
 
+    # 4. 7-Day Window Chart Data
     chart_data = []
     for i in range(6, -1, -1):
         target_date = (datetime.utcnow() - timedelta(days=i)).date()
@@ -136,7 +142,7 @@ async def get_admin_stats(
         
         chart_data.append({
             "date": target_date.strftime("%b %d"),
-            "Visits": 100 + (i * 15),
+            "Visits": 100 + (i * 15), # Placeholder logic
             "Signups": day_signups
         })
 

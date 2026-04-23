@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Card, 
   Text, 
@@ -46,50 +46,63 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
+    // Only set loading if we don't have data yet to avoid flickering on refreshes
+    if (!data) setLoading(true);
+    
     try {
       const response = await api.get('/admin/stats');
       setData(response.data);
+      setAuthorized(true);
     } catch (err: any) {
+      console.error("Dashboard Fetch Error:", err);
       if (err.response?.status === 403) {
-        console.error("Access Denied: Invalid Admin Key");
         setAuthorized(false);
+        sessionStorage.removeItem('nawemusic_admin_auth');
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [data]);
 
   useEffect(() => {
-    // Basic Gatekeeper Logic
     const adminSecret = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY;
     const sessionAuth = sessionStorage.getItem('nawemusic_admin_auth');
 
-    if (sessionAuth === adminSecret) {
+    if (sessionAuth && sessionAuth === adminSecret) {
       setAuthorized(true);
       fetchDashboardData();
     } else {
       const entry = prompt("AuraWorks Security: Enter Admin Key");
-      if (entry === adminSecret) {
+      if (entry && entry === adminSecret) {
         sessionStorage.setItem('nawemusic_admin_auth', entry);
         setAuthorized(true);
         fetchDashboardData();
       } else {
-        window.location.href = "/"; // Redirect unauthorized users
+        // If they fail the prompt, we stop loading and redirect
+        setLoading(false);
+        window.location.href = "/";
       }
     }
 
     const interval = setInterval(() => {
-      if (authorized) fetchDashboardData();
+      // Only refresh if we already passed the initial check
+      if (sessionStorage.getItem('nawemusic_admin_auth') === adminSecret) {
+        fetchDashboardData();
+      }
     }, 60000);
 
     return () => clearInterval(interval);
-  }, [authorized]);
+  }, [fetchDashboardData]);
 
+  // If we are loading or not authorized, show the spinner
   if (loading || !authorized || !data) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        <Text className="text-neutral-500 animate-pulse font-mono text-xs tracking-widest uppercase">
+          Authenticating Growth Intelligence
+        </Text>
       </div>
     );
   }
@@ -99,11 +112,11 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="flex justify-between items-end">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">Growth Intelligence</h1>
-            <Text className="text-neutral-500 mt-1 font-medium italic">Internal AuraWorks Audit</Text>
+            <h1 className="text-3xl font-bold tracking-tight text-white uppercase italic">Growth Intelligence</h1>
+            <Text className="text-neutral-500 mt-1 font-medium italic opacity-70">Internal AuraWorks Audit — Confidential</Text>
           </div>
-          <Badge color="orange" className="bg-orange-500/10 text-orange-500 border-none px-3 py-1">
-            Live Pipeline
+          <Badge color="orange" className="bg-orange-500/10 text-orange-500 border border-orange-500/20 px-3 py-1 font-bold tracking-tighter">
+            LIVE PIPELINE
           </Badge>
         </header>
 
@@ -117,7 +130,7 @@ export default function DashboardPage() {
 
         {/* Acquisition Trend */}
         <Card className="bg-neutral-900 border-neutral-800 p-8 shadow-2xl">
-          <Text className="text-white font-bold text-lg mb-2">Acquisition Trend</Text>
+          <Text className="text-white font-bold text-lg mb-2 uppercase tracking-tight">Acquisition Trend</Text>
           <Text className="text-neutral-500 text-sm mb-6">7-day rolling window of artist engagement</Text>
           <AreaChart
             className="h-80 mt-8"
@@ -135,7 +148,7 @@ export default function DashboardPage() {
         {/* Detailed User Table */}
         <Card className="bg-neutral-900 border-neutral-800 p-0 overflow-hidden shadow-2xl">
           <div className="p-8 border-b border-white/5 bg-white/[0.01]">
-             <Text className="text-white font-bold text-lg">Verification Ledger</Text>
+             <Text className="text-white font-bold text-lg uppercase tracking-tight">Verification Ledger</Text>
              <Text className="text-neutral-500 text-sm">Detailed breakdown of artist referral efficacy</Text>
           </div>
           <Table>
@@ -153,7 +166,7 @@ export default function DashboardPage() {
                   <TableCell className="pl-8">
                     <div className="flex flex-col">
                       <span className="text-white font-semibold">{item.full_name}</span>
-                      <span className="text-neutral-500 text-xs font-mono">{item.email}</span>
+                      <span className="text-neutral-500 text-xs font-mono opacity-60">{item.email}</span>
                     </div>
                   </TableCell>
                   <TableCell>

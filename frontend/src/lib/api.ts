@@ -5,7 +5,6 @@ import axios from 'axios';
  * to the browser during the client-side execution.
  */
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const ADMIN_SECRET_KEY = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY;
 
 const api = axios.create({
   baseURL: API_URL,
@@ -13,13 +12,18 @@ const api = axios.create({
 
 /**
  * Global Request Interceptor
- * This automatically attaches the Admin Secret Key to the headers 
- * if it exists in your environment variables.
+ * Dynamically retrieves the key from environment variables or 
+ * sessionStorage at the moment of the request.
  */
 api.interceptors.request.use((config) => {
-  if (ADMIN_SECRET_KEY) {
-    config.headers['X-Admin-Key'] = ADMIN_SECRET_KEY;
+  // Check ENV first, then fallback to SessionStorage
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY || 
+                   (typeof window !== 'undefined' ? sessionStorage.getItem('nawemusic_admin_auth') : null);
+
+  if (adminKey) {
+    config.headers['X-Admin-Key'] = adminKey;
   }
+  
   return config;
 });
 
@@ -32,7 +36,6 @@ export const verifyEmailToken = async (token: string) => {
     const response = await api.get(`/auth/verify/${token}`);
     return response.data;
   } catch (error) {
-    // Re-throw to be caught by the UI (invite/page.tsx)
     throw error;
   }
 };

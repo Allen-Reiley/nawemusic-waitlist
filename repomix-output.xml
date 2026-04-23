@@ -149,21 +149,20 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "NaweMusic Master Seed"
     
     # Database Configuration
-    # Falls back to local SQLite if DATABASE_URL is not set in .env
     DATABASE_URL: str = "sqlite:///./aura_local.db" 
     
     # Security & Auth
-    # Use a strong secret key in production for JWT generation
     SECRET_KEY: str = "your-super-secret-key-change-me"
+    # This must match what you have in your Render Env Vars and Frontend .env
+    ADMIN_SECRET_KEY: str = "placeholder-key-for-local-dev" 
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days for verification links
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7 
     
     # Email Service (Resend)
     RESEND_API_KEY: Optional[str] = None
-    EMAIL_FROM: str = "nawemusic@auraworks.co.za" # Update once domain is verified
+    EMAIL_FROM: str = "nawemusic@auraworks.co.za"
     
     # Site URLs
-    # Needed to construct the verification links sent in emails
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
 
@@ -309,7 +308,7 @@ def send_verification_email(email: str, full_name: str, verification_link: str):
 <file path="backend/app/main.py">
 from typing import Optional, List
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -321,6 +320,9 @@ from app.core.config import settings
 from app.services.email import send_verification_email
 
 app = FastAPI(title="NaweMusic API")
+
+# Use the key from the updated Settings class
+ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY 
 
 app.add_middleware(
     CORSMiddleware,
@@ -389,25 +391,32 @@ async def join_waitlist(
     }
 
 @app.get("/admin/stats")
-async def get_admin_stats(session: Session = Depends(get_session)):
+async def get_admin_stats(
+    session: Session = Depends(get_session),
+    x_admin_key: Optional[str] = Header(None) 
+):
     """
-    Returns unified data for the Growth Intelligence dashboard:
-    1. User Ledger
-    2. KPI Metrics (Visits, Signups, Conversion, Avg Referrals)
-    3. Time-series chart data for the last 7 days
+    Returns unified data only if a valid X-Admin-Key is provided.
+    FastAPI automatically handles the hyphen-to-underscore conversion for headers.
     """
+    # Strict validation against the key defined in core/config.py
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(
+            status_code=403, 
+            detail="Unauthorized: AuraWorks Growth Intelligence Access Denied."
+        )
+
     # 1. Fetch all users
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
     
-    # 2. Traffic Placeholder (Link to Vercel/PageVisit table later)
-    total_visits = 1210 # Placeholder constant for now
+    # 2. Traffic Placeholder (Link to analytics table in Phase 2)
+    total_visits = 1210 
     
     formatted_users = []
     total_verified_invites = 0
     
     for u in users:
-        # Count verified referrals for this user
         invite_count = session.exec(
             select(func.count(User.id)).where(
                 User.referred_by_id == u.id, 
@@ -425,16 +434,14 @@ async def get_admin_stats(session: Session = Depends(get_session)):
             "invite_count": invite_count
         })
 
-    # 3. KPI Calculations
+    # 3. Calculations
     avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
     conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
 
-    # 4. Generate 7-Day Chart Data
+    # 4. 7-Day Window Chart Data
     chart_data = []
     for i in range(6, -1, -1):
         target_date = (datetime.utcnow() - timedelta(days=i)).date()
-        
-        # Count signups that happened on this specific day
         day_signups = session.exec(
             select(func.count(User.id)).where(
                 func.date(User.created_at) == target_date
@@ -443,7 +450,7 @@ async def get_admin_stats(session: Session = Depends(get_session)):
         
         chart_data.append({
             "date": target_date.strftime("%b %d"),
-            "Visits": 100 + (i * 15), # Placeholder visit trend
+            "Visits": 100 + (i * 15), # Placeholder logic
             "Signups": day_signups
         })
 
@@ -462,7 +469,7 @@ async def get_admin_stats(session: Session = Depends(get_session)):
 <file path="frontend/src/app/(pages)/dashboard/page.tsx">
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Card, 
   Text, 
@@ -506,28 +513,65 @@ interface DashboardData {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
+    // Only set loading if we don't have data yet to avoid flickering on refreshes
+    if (!data) setLoading(true);
+    
     try {
       const response = await api.get('/admin/stats');
       setData(response.data);
-    } catch (err) {
-      console.error("Failed to fetch live dashboard data", err);
+      setAuthorized(true);
+    } catch (err: any) {
+      console.error("Dashboard Fetch Error:", err);
+      if (err.response?.status === 403) {
+        setAuthorized(false);
+        sessionStorage.removeItem('nawemusic_admin_auth');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [data]);
 
   useEffect(() => {
-    fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 60000);
-    return () => clearInterval(interval);
-  }, []);
+    const adminSecret = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY;
+    const sessionAuth = sessionStorage.getItem('nawemusic_admin_auth');
 
-  if (loading || !data) {
+    if (sessionAuth && sessionAuth === adminSecret) {
+      setAuthorized(true);
+      fetchDashboardData();
+    } else {
+      const entry = prompt("AuraWorks Security: Enter Admin Key");
+      if (entry && entry === adminSecret) {
+        sessionStorage.setItem('nawemusic_admin_auth', entry);
+        setAuthorized(true);
+        fetchDashboardData();
+      } else {
+        // If they fail the prompt, we stop loading and redirect
+        setLoading(false);
+        window.location.href = "/";
+      }
+    }
+
+    const interval = setInterval(() => {
+      // Only refresh if we already passed the initial check
+      if (sessionStorage.getItem('nawemusic_admin_auth') === adminSecret) {
+        fetchDashboardData();
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [fetchDashboardData]);
+
+  // If we are loading or not authorized, show the spinner
+  if (loading || !authorized || !data) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+        <Text className="text-neutral-500 animate-pulse font-mono text-xs tracking-widest uppercase">
+          Authenticating Growth Intelligence
+        </Text>
       </div>
     );
   }
@@ -535,10 +579,15 @@ export default function DashboardPage() {
   return (
     <main className="p-6 md:p-10 bg-black min-h-screen text-white">
       <div className="max-w-7xl mx-auto space-y-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Growth Intelligence</h1>
-          <Text className="text-neutral-500 mt-1 font-medium">AuraWorks Live Performance</Text>
-        </div>
+        <header className="flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-white uppercase italic">Growth Intelligence</h1>
+            <Text className="text-neutral-500 mt-1 font-medium italic opacity-70">Internal AuraWorks Audit — Confidential</Text>
+          </div>
+          <Badge color="orange" className="bg-orange-500/10 text-orange-500 border border-orange-500/20 px-3 py-1 font-bold tracking-tighter">
+            LIVE PIPELINE
+          </Badge>
+        </header>
 
         {/* Top Level KPIs */}
         <Grid numItemsSm={2} numItemsLg={4} className="gap-6">
@@ -549,8 +598,9 @@ export default function DashboardPage() {
         </Grid>
 
         {/* Acquisition Trend */}
-        <Card className="bg-neutral-900 border-neutral-800 p-8">
-          <Text className="text-white font-bold text-lg">Acquisition Trend</Text>
+        <Card className="bg-neutral-900 border-neutral-800 p-8 shadow-2xl">
+          <Text className="text-white font-bold text-lg mb-2 uppercase tracking-tight">Acquisition Trend</Text>
+          <Text className="text-neutral-500 text-sm mb-6">7-day rolling window of artist engagement</Text>
           <AreaChart
             className="h-80 mt-8"
             data={data.chartData}
@@ -565,9 +615,10 @@ export default function DashboardPage() {
         </Card>
 
         {/* Detailed User Table */}
-        <Card className="bg-neutral-900 border-neutral-800 p-0 overflow-hidden">
-          <div className="p-8 border-b border-white/5">
-             <Text className="text-white font-bold text-lg">Verification Ledger</Text>
+        <Card className="bg-neutral-900 border-neutral-800 p-0 overflow-hidden shadow-2xl">
+          <div className="p-8 border-b border-white/5 bg-white/[0.01]">
+             <Text className="text-white font-bold text-lg uppercase tracking-tight">Verification Ledger</Text>
+             <Text className="text-neutral-500 text-sm">Detailed breakdown of artist referral efficacy</Text>
           </div>
           <Table>
             <TableHead className="bg-white/[0.02]">
@@ -584,11 +635,11 @@ export default function DashboardPage() {
                   <TableCell className="pl-8">
                     <div className="flex flex-col">
                       <span className="text-white font-semibold">{item.full_name}</span>
-                      <span className="text-neutral-500 text-xs">{item.email}</span>
+                      <span className="text-neutral-500 text-xs font-mono opacity-60">{item.email}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <code className="text-orange-500 font-mono text-xs bg-orange-500/5 px-2 py-1 rounded">
+                    <code className="text-orange-500 font-mono text-xs bg-orange-500/5 px-2 py-1 rounded border border-orange-500/10">
                       {item.referral_code}
                     </code>
                   </TableCell>
@@ -1652,7 +1703,24 @@ import axios from 'axios';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
-  baseURL: API_URL
+  baseURL: API_URL,
+});
+
+/**
+ * Global Request Interceptor
+ * Dynamically retrieves the key from environment variables or 
+ * sessionStorage at the moment of the request.
+ */
+api.interceptors.request.use((config) => {
+  // Check ENV first, then fallback to SessionStorage
+  const adminKey = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY || 
+                   (typeof window !== 'undefined' ? sessionStorage.getItem('nawemusic_admin_auth') : null);
+
+  if (adminKey) {
+    config.headers['X-Admin-Key'] = adminKey;
+  }
+  
+  return config;
 });
 
 /**
@@ -1664,7 +1732,6 @@ export const verifyEmailToken = async (token: string) => {
     const response = await api.get(`/auth/verify/${token}`);
     return response.data;
   } catch (error) {
-    // Re-throw to be caught by the UI (invite/page.tsx)
     throw error;
   }
 };
