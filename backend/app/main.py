@@ -18,17 +18,26 @@ ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY
 
 # backend/app/main.py
 
+# backend/app/main.py
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://nawemusic.auraworks.co.za", 
         "http://localhost:3000",
-        "https://nawemusic-waitlist-izi23lolp-allen-reileys-projects.vercel.app"
+        "https://nawemusic-waitlist-izi23lolp-allen-reileys-projects.vercel.app",
+        "https://nawemusic-waitlist-1.onrender.com"
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    # Explicitly list X-Admin-Key here to satisfy the Preflight check
-    allow_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Headers", "Authorization", "X-Admin-Key"],
+    # Explicitly naming the custom header is the key to passing the preflight check
+    allow_headers=[
+        "Content-Type", 
+        "Set-Cookie", 
+        "Access-Control-Allow-Headers", 
+        "Authorization", 
+        "X-Admin-Key"
+    ],
 )
 
 app.include_router(auth.router)
