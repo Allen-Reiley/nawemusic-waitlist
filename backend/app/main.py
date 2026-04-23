@@ -16,6 +16,8 @@ app = FastAPI(title="NaweMusic API")
 # Use the key from the updated Settings class
 ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY 
 
+# backend/app/main.py
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -25,7 +27,8 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    # Explicitly list X-Admin-Key here to satisfy the Preflight check
+    allow_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Headers", "Authorization", "X-Admin-Key"],
 )
 
 app.include_router(auth.router)
