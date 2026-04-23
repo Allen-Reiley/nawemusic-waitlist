@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "./providers"; // Import our new provider
+import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
   title: "NaweMusic Waitlist",
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>{children}</Providers>
+        <Analytics />
       </body>
     </html>
   );

@@ -11,6 +11,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.99.2",
     "@tremor/react": "^3.18.7",
+    "@vercel/analytics": "^2.0.1",
     "axios": "^1.15.2",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
