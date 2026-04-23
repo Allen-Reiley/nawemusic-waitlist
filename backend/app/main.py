@@ -78,3 +78,29 @@ async def join_waitlist(
         "referral_code": user_data.referral_code,
         "message": "Spot secured! Check your email."
     }
+
+@app.get("/admin/stats")
+async def get_admin_stats(session: Session = Depends(get_session)):
+    """
+    Returns full user list with count of verified referrals per user.
+    Note: Secure this with an Admin API Key in production.
+    """
+    # This query joins the User table with itself to count referrals
+    users = session.exec(select(User)).all()
+    
+    user_list = []
+    for user in users:
+        # Count how many users were referred by this specific ID
+        invite_count = session.exec(
+            select(func.count(User.id)).where(User.referred_by_id == user.id, User.is_verified == True)
+        ).one()
+        
+        user_list.append({
+            "full_name": user.full_name,
+            "email": user.email,
+            "referral_code": user.referral_code,
+            "is_verified": user.is_verified,
+            "invite_count": invite_count
+        })
+        
+    return {"users": user_list}
