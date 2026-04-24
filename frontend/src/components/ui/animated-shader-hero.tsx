@@ -461,7 +461,7 @@ const Hero: React.FC<HeroProps> = ({
           )}
         </div>
 
-        <div className="h-24 md:h-32 w-full shrink-0" />
+        <div className="h-8 md:h-12 w-full shrink-0" />
       </div>
     </div>
   );
