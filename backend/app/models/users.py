@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime, timezone
 from sqlmodel import SQLModel, Field
 import uuid
 
@@ -28,6 +29,8 @@ class User(SQLModel, table=True):
     # is_verified starts False; flipped to True by the /auth/verify/{token} endpoint
     is_verified: bool = Field(default=False)
     
-    # Optional: Track when the user joined for leaderboard sorting
-    # from datetime import datetime, timezone
-    # created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Track when the user joined for leaderboard sorting and admin stats
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )

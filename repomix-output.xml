@@ -385,7 +385,7 @@ async def join_waitlist(
         raise HTTPException(status_code=500, detail="Database error.")
     
     token = auth.create_verification_token(user_data.email)
-    verification_link = f"{settings.FRONTEND_URL}/invites?token={token}"
+    verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
     
     try:
         send_verification_email(

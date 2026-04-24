@@ -1,5 +1,6 @@
 from typing import Optional, List
-from datetime import datetime, timedelta
+# Update: include timezone
+from datetime import datetime, timedelta, timezone 
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
@@ -13,12 +14,7 @@ from app.services.email import send_verification_email
 
 app = FastAPI(title="NaweMusic API")
 
-# Use the key from the updated Settings class
 ADMIN_SECRET_KEY = settings.ADMIN_SECRET_KEY 
-
-# backend/app/main.py
-
-# backend/app/main.py
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +26,6 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    # Explicitly naming the custom header is the key to passing the preflight check
     allow_headers=[
         "Content-Type", 
         "Set-Cookie", 
@@ -97,24 +92,18 @@ async def join_waitlist(
 @app.get("/admin/stats")
 async def get_admin_stats(
     session: Session = Depends(get_session),
-    x_admin_key: Optional[str] = Header(None) 
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key") 
 ):
-    """
-    Returns unified data only if a valid X-Admin-Key is provided.
-    FastAPI automatically handles the hyphen-to-underscore conversion for headers.
-    """
-    # Strict validation against the key defined in core/config.py
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
         raise HTTPException(
             status_code=403, 
             detail="Unauthorized: AuraWorks Growth Intelligence Access Denied."
         )
 
-    # 1. Fetch all users
+    # Now that created_at is uncommented in users.py, this will work.
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
     
-    # 2. Traffic Placeholder (Link to analytics table in Phase 2)
     total_visits = 1210 
     
     formatted_users = []
@@ -138,14 +127,15 @@ async def get_admin_stats(
             "invite_count": invite_count
         })
 
-    # 3. Calculations
     avg_referrals = total_verified_invites / total_signups if total_signups > 0 else 0
     conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
 
-    # 4. 7-Day Window Chart Data
     chart_data = []
+    # Get current time in UTC to avoid deprecation warnings
+    now = datetime.now(timezone.utc)
+    
     for i in range(6, -1, -1):
-        target_date = (datetime.utcnow() - timedelta(days=i)).date()
+        target_date = (now - timedelta(days=i)).date()
         day_signups = session.exec(
             select(func.count(User.id)).where(
                 func.date(User.created_at) == target_date
@@ -154,7 +144,7 @@ async def get_admin_stats(
         
         chart_data.append({
             "date": target_date.strftime("%b %d"),
-            "Visits": 100 + (i * 15), # Placeholder logic
+            "Visits": 100 + (i * 15),
             "Signups": day_signups
         })
 
