@@ -398,8 +398,8 @@ const Hero: React.FC<HeroProps> = ({
         style={{ background: 'black' }}
       />
       
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pt-24 pb-12 text-white">
-        <div className="flex flex-col items-center text-center space-y-8 max-w-5xl mx-auto mb-auto mt-auto">
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pt-12 md:pt-24 pb-12 text-white">
+        <div className="flex flex-col items-center text-center space-y-8 max-w-5xl mx-auto mb-auto mt-0 md:mt-auto">
           
           <div className="mb-2 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md animate-fade-in-down">
             <p className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
