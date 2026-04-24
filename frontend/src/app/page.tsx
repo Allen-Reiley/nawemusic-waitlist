@@ -1,24 +1,26 @@
 'use client';
-import { useState, Suspense } from 'react'; // Added Suspense import
+import { useState, useEffect, Suspense } from 'react';
 import Hero from '@/components/ui/animated-shader-hero';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReferral } from '@/hooks/useReferral';
 import api from '@/lib/api';
 
-// 1. Move the core logic into a separate component to wrap it in Suspense
 function WaitlistContent() {
+  const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState(0); 
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
 
   // Captures ?ref= from URL or LocalStorage automatically
-  // This hook requires a Suspense boundary in Next.js
   const referralCode = useReferral();
 
-  const handleJoinWaitlist = async () => {
+  // 1. Prevent "Cheap" Render Lag: Only show UI when JS is ready
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const handleJoinWaitlist = () => {
     setError(null);
-    setIsLoading(true);
     
     const cleanName = formData.name.replace(/<[^>]*>?/gm, '').trim();
     const cleanEmail = formData.email.replace(/<[^>]*>?/gm, '').trim().toLowerCase();
@@ -26,46 +28,49 @@ function WaitlistContent() {
   
     if (cleanName.length < 2) {
       setError("Please enter your full name.");
-      setIsLoading(false);
       return;
     }
   
     if (!emailRegex.test(cleanEmail)) {
       setError("Please enter a valid email address.");
-      setIsLoading(false);
       return;
     }
   
-    try {
-      await api.post('/join', 
-        { 
-          full_name: cleanName, 
-          email: cleanEmail 
-        }, 
-        { 
-          params: { ref: referralCode || undefined } 
-        }
-      );
+    // 2. Fast Response: Update UI immediately for a seamless experience
+    setFormData({ name: cleanName, email: cleanEmail });
+    setStep(1);
 
-      setFormData({ name: cleanName, email: cleanEmail });
-      setStep(1);
-    } catch (err: any) {
-      const msg = err.response?.data?.detail || "Registration failed. Please try again.";
-      setError(msg);
-    } finally {
-      setIsLoading(false);
-    }
+    // 3. Background Sync: No 'await' here to keep the UI from locking up
+    const submitData = async () => {
+      try {
+        await api.post('/join', 
+          { 
+            full_name: cleanName, 
+            email: cleanEmail 
+          }, 
+          { 
+            params: { ref: referralCode || undefined } 
+          }
+        );
+        console.log("Transmission Successful");
+      } catch (err: any) {
+        console.error("Background sync error:", err);
+        // We don't block the user's flow here, but we log it for debugging
+      }
+    };
+
+    submitData();
   };
 
   return (
-    <>
+    <div className={`transition-opacity duration-1000 ease-in-out ${mounted ? 'opacity-100' : 'opacity-0'}`}>
       <Hero 
         headline={{
           line1: "Own Your Fanbase",
           line2: "Join The Waitlist"
         }}
         subtitle="Stop renting your audience from social media—start owning it. Your music. Your audience. Your way."
-        className={step > 0 ? "blur-md scale-95 transition-all duration-700" : "transition-all duration-700"}
+        className={step > 0 ? "blur-md scale-95 transition-all duration-1000" : "transition-all duration-1000"}
       />
 
       {/* Hero Input Section */}
@@ -80,9 +85,8 @@ function WaitlistContent() {
               placeholder="Full Name" 
               type="text"
               maxLength={50}
-              disabled={isLoading}
               autoComplete="name"
-              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
               onChange={(e) => {
                 setError(null);
                 setFormData({...formData, name: e.target.value});
@@ -92,9 +96,8 @@ function WaitlistContent() {
               placeholder="Email Address" 
               type="email" 
               required
-              disabled={isLoading}
               autoComplete="email"
-              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors disabled:opacity-50"
+              className="w-full md:flex-1 bg-transparent border-b border-white/30 p-2 outline-none text-white focus:border-orange-500 transition-colors"
               onChange={(e) => {
                 setError(null);
                 setFormData({...formData, email: e.target.value});
@@ -102,14 +105,10 @@ function WaitlistContent() {
             />
             <button 
               onClick={handleJoinWaitlist}
-              disabled={!formData.name || !formData.email || isLoading}
-              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center min-w-[160px]"
+              disabled={!formData.name || !formData.email}
+              className="w-full md:w-auto whitespace-nowrap bg-orange-500 px-8 py-3 rounded-full font-bold text-black hover:bg-orange-400 active:scale-95 transition-all disabled:opacity-20 disabled:cursor-not-allowed flex items-center justify-center min-w-[160px]"
             >
-              {isLoading ? (
-                <div className="h-5 w-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-              ) : (
-                "Secure My Spot"
-              )}
+              Secure My Spot
             </button>
           </motion.div>
 
@@ -154,7 +153,7 @@ function WaitlistContent() {
                 <AnimatePresence mode="wait">
                   {step === 1 && (
                     <motion.div key="s1" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
-                      <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent">The Philosophy</h3>
+                      <h3 className="text-3xl font-bold mb-4 bg-gradient-to-r from-orange-400 to-amber-200 bg-clip-text text-transparent italic">The Philosophy</h3>
                       <p className="text-white/70 text-lg leading-relaxed">
                         NaweMusic is the bridge between your craft and your community. We’re moving music off the social media feed and onto your own terms. Sell tickets, host events, and talk to your fans directly on a platform you actually control.
                       </p>
@@ -162,7 +161,7 @@ function WaitlistContent() {
                   )}
                   {step === 2 && (
                     <motion.div key="s2" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
-                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Join the Revolution</h3>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400 italic">Join the Revolution</h3>
                       <p className="text-white/70 text-lg leading-relaxed">
                         We are building a network of premium artists. Spread the word and earn a 30% one-time commission for every verified artist you bring in. Inviting others isn’t just sharing a link—it’s signaling a change in the industry.
                       </p>
@@ -170,7 +169,7 @@ function WaitlistContent() {
                   )}
                   {step === 3 && (
                     <motion.div key="s3" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
-                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Founding Committee</h3>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400 italic">Founding Committee</h3>
                       <p className="text-white/60 mb-6 font-medium">The top 10 referrers gain shareholder-level influence:</p>
                       <ul className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         <li className="flex items-center gap-2"><span className="h-2 w-2 bg-orange-500 rounded-full"/> Lifetime Free Access</li>
@@ -182,26 +181,20 @@ function WaitlistContent() {
                   )}
                   {step === 4 && (
                     <motion.div key="s4" initial={{ x: 10, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -10, opacity: 0 }}>
-                      <h3 className="text-3xl font-bold mb-4 text-orange-400">Final Verification</h3>
+                      <h3 className="text-3xl font-bold mb-4 text-orange-400 italic">Final Verification</h3>
                       <div className="space-y-4">
                         <p className="text-white/70 text-lg leading-relaxed">
                           We’ve sent a secure link to <span className="text-orange-400 font-semibold">{formData.email}</span>. 
                         </p>
-                        
                         <p className="text-white/60 text-sm leading-relaxed">
                           The email includes our Terms & Conditions—please read them carefully as they outline your rights and the affiliate commission structure. 
                         </p>
-
                         <div className="bg-white/5 border-l-2 border-orange-500 p-4 rounded-r-xl">
                           <p className="text-sm text-white/80">
                             <span className="text-orange-400 font-bold">Note:</span> At launch, NaweMusic will be <b>R500/year</b>. 
                             Top referrers on the Committee will bypass this fee and gain early access to the roadmap.
                           </p>
                         </div>
-
-                        <p className="text-white/40 text-[10px] italic pt-2">
-                          Verify your email now to activate your account and secure your affiliate link.
-                        </p>
                       </div>
                     </motion.div>
                   )}
@@ -233,15 +226,14 @@ function WaitlistContent() {
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </div>
   );
 }
 
-// 2. Wrap the final Page export in a Suspense boundary
 export default function Page() {
   return (
     <main className="relative min-h-screen bg-black">
-      <Suspense fallback={<div className="fixed inset-0 bg-black z-[100] flex items-center justify-center text-orange-500">Loading Experience...</div>}>
+      <Suspense fallback={<div className="fixed inset-0 bg-black z-[100] flex items-center justify-center text-orange-500 font-mono text-xs tracking-widest uppercase">Initializing Ecosystem...</div>}>
         <WaitlistContent />
       </Suspense>
     </main>
