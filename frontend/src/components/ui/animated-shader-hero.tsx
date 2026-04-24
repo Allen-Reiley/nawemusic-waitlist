@@ -331,7 +331,8 @@ const Hero: React.FC<HeroProps> = ({
   const canvasRef = useShaderBackground();
 
   return (
-    <div className={`relative w-full min-h-screen flex flex-col overflow-hidden bg-black ${className}`}>
+    /* Removed min-h-screen to allow content-based height */
+    <div className={`relative w-full flex flex-col overflow-hidden bg-black ${className}`}>
       <style jsx>{`
         @keyframes fade-in-down {
           from {
@@ -398,8 +399,14 @@ const Hero: React.FC<HeroProps> = ({
         style={{ background: 'black' }}
       />
       
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 pt-12 md:pt-24 pb-12 text-white">
-        <div className="flex flex-col items-center text-center space-y-8 max-w-5xl mx-auto mb-auto mt-0 md:mt-auto">
+      {/* 1. Changed justify-center to justify-start
+          2. Reduced pt-24 to pt-16 (Mobile) / pt-24 (PC)
+          3. Set pb-0 to remove internal bottom gap
+      */}
+      <div className="relative z-10 flex flex-col items-center justify-start px-6 pt-16 md:pt-24 pb-0 text-white">
+        
+        {/* Removed mt-auto/mb-auto centering logic */}
+        <div className="flex flex-col items-center text-center space-y-8 max-w-5xl mx-auto">
           
           <div className="mb-2 px-4 py-1.5 rounded-full border border-white/10 bg-white/5 backdrop-blur-md animate-fade-in-down">
             <p className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-white/40 font-medium">
@@ -461,7 +468,8 @@ const Hero: React.FC<HeroProps> = ({
           )}
         </div>
 
-        <div className="h-8 md:h-12 w-full shrink-0" />
+        {/* Stripped height spacer entirely to allow page.tsx margin to define the gap */}
+        <div className="w-full shrink-0" />
       </div>
     </div>
   );

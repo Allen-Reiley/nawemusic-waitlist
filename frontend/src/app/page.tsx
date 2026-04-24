@@ -73,9 +73,9 @@ function WaitlistContent() {
         className={step > 0 ? "blur-md scale-95 transition-all duration-1000" : "transition-all duration-1000"}
       />
 
-      {/* Hero Input Section */}
+      {/* Hero Input Section - 4px gap applied via mt-1 */}
       {step === 0 && (
-        <div className="relative z-30 flex flex-col items-center p-6 pb-12 md:pb-20 mt-[-14rem] min-[444px]:mt-[-13rem] sm:mt-[-12rem] md:mt-[-10rem] lg:mt-[-12rem]">
+        <div className="relative z-30 flex flex-col items-center p-6 pb-12 md:pb-20 mt-1">
           <motion.div 
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -218,7 +218,7 @@ function WaitlistContent() {
                 )}
               </div>
 
-              <div className="flex flex-col items-center mt-8 pt-6 border-t border-white/5 text-center">
+              <div className="flex flex-col items-center mt-6 pt-4 border-t border-white/5 text-center">
                 <p className="text-[10px] uppercase tracking-[0.2em] text-white/20">A Project by</p>
                 <p className="text-sm font-bold text-white/40 mt-1 uppercase tracking-wider">AuraWorks (Pty) Ltd</p>
               </div>
