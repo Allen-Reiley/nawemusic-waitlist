@@ -28,6 +28,10 @@ class User(SQLModel, table=True):
     # Status & Verification
     # is_verified starts False; flipped to True by the /auth/verify/{token} endpoint
     is_verified: bool = Field(default=False)
+
+    # Tracker for the 24-hour follow-up nudge
+    # Ensures users only receive one reminder email
+    reminder_sent: bool = Field(default=False)
     
     # Track when the user joined for leaderboard sorting and admin stats
     created_at: datetime = Field(

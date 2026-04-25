@@ -1,7 +1,7 @@
 from typing import Optional, List
 # Update: include timezone
 from datetime import datetime, timedelta, timezone 
-from fastapi import FastAPI, Depends, HTTPException, Header
+from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks # Added BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -44,6 +44,14 @@ def on_startup():
 @app.get("/")
 async def root():
     return {"status": "online", "service": "NaweMusic Backend"}
+
+# --- HEALTH CHECK FOR CRON-JOB.ORG ---
+@app.get("/health")
+async def health_check():
+    """
+    Lightweight endpoint to keep the Render instance from sleeping.
+    """
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
 
 @app.post("/join")
 async def join_waitlist(
@@ -89,6 +97,51 @@ async def join_waitlist(
         "message": "Spot secured! Check your email."
     }
 
+# --- NEW CRON ENDPOINT ---
+@app.post("/admin/process-reminders")
+async def process_reminders(
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """
+    Triggered daily via cron-job.org to nudge unverified users.
+    """
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # Cutoff is 24 hours ago
+    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+    
+    # Select users who:
+    # 1. Are NOT verified
+    # 2. Signed up more than 24 hours ago
+    # 3. Have NOT been sent a reminder yet
+    statement = select(User).where(
+        User.is_verified == False,
+        User.created_at <= cutoff,
+        User.reminder_sent == False
+    )
+    pending_users = session.exec(statement).all()
+
+    for user in pending_users:
+        token = auth.create_verification_token(user.email)
+        verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
+        
+        # Use background tasks to prevent the request from timing out
+        background_tasks.add_task(
+            send_verification_email,
+            email=user.email,
+            full_name=user.full_name,
+            verification_link=verification_link
+        )
+        
+        user.reminder_sent = True
+        session.add(user)
+
+    session.commit()
+    return {"status": "success", "reminders_sent": len(pending_users)}
+
 @app.get("/admin/stats")
 async def get_admin_stats(
     session: Session = Depends(get_session),
@@ -100,7 +153,6 @@ async def get_admin_stats(
             detail="Unauthorized: AuraWorks Growth Intelligence Access Denied."
         )
 
-    # Now that created_at is uncommented in users.py, this will work.
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
     
@@ -131,7 +183,6 @@ async def get_admin_stats(
     conv_rate = round((total_signups / total_visits) * 100, 1) if total_visits > 0 else 0
 
     chart_data = []
-    # Get current time in UTC to avoid deprecation warnings
     now = datetime.now(timezone.utc)
     
     for i in range(6, -1, -1):
