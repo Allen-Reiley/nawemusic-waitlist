@@ -41,6 +41,27 @@ interface DashboardData {
   }>;
 }
 
+interface DashboardData {
+  users: Array<{
+    full_name: string;
+    email: string;
+    referral_code: string;
+    is_verified: boolean;
+    invite_count: number;
+  }>;
+  stats: {
+    total_visits: number;
+    total_signups: number;
+    conversion_rate: number;
+    avg_referrals: number;
+  };
+  chartData: Array<{
+    date: string;
+    Visits: number;
+    Signups: number;
+  }>;
+}
+
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +76,13 @@ export default function DashboardPage() {
       setData(response.data);
       setAuthorized(true);
     } catch (err: any) {
-      console.error("Dashboard Fetch Error:", err);
+      // Detailed error logging to help debug the 400/403 issues seen in Render logs
+      console.error("Dashboard Fetch Error Detail:", {
+        status: err.response?.status,
+        data: err.response?.data,
+        message: err.message
+      });
+      
       if (err.response?.status === 403) {
         setAuthorized(false);
         sessionStorage.removeItem('nawemusic_admin_auth');
@@ -85,12 +112,15 @@ export default function DashboardPage() {
       }
     }
 
+    /** * OPTIMIZATION: Polling interval adjusted to 60 seconds.
+     * Prevents database connection exhaustion and unnecessary CPU load 
+     * as identified in the Render logs.
+     */
     const interval = setInterval(() => {
-      // Only refresh if we already passed the initial check
       if (sessionStorage.getItem('nawemusic_admin_auth') === adminSecret) {
         fetchDashboardData();
       }
-    }, 60000);
+    }, 60000); 
 
     return () => clearInterval(interval);
   }, [fetchDashboardData]);

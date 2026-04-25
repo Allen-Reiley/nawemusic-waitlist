@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useRef } from 'react';
 import Hero from '@/components/ui/animated-shader-hero';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useReferral } from '@/hooks/useReferral';
@@ -10,6 +10,9 @@ function WaitlistContent() {
   const [step, setStep] = useState(0); 
   const [formData, setFormData] = useState({ name: '', email: '' });
   const [error, setError] = useState<string | null>(null);
+  
+  // Use a ref to prevent double-submissions from rapid clicks
+  const isSubmitting = useRef(false);
 
   // Captures ?ref= from URL or LocalStorage automatically
   const referralCode = useReferral();
@@ -20,6 +23,7 @@ function WaitlistContent() {
   }, []);
 
   const handleJoinWaitlist = () => {
+    if (isSubmitting.current) return;
     setError(null);
     
     const cleanName = formData.name.replace(/<[^>]*>?/gm, '').trim();
@@ -39,8 +43,9 @@ function WaitlistContent() {
     // 2. Fast Response: Update UI immediately for a seamless experience
     setFormData({ name: cleanName, email: cleanEmail });
     setStep(1);
+    isSubmitting.current = true;
 
-    // 3. Background Sync: No 'await' here to keep the UI from locking up
+    // 3. Background Sync: Enhanced with detailed error logging for 400 Bad Request debugging
     const submitData = async () => {
       try {
         await api.post('/join', 
@@ -54,8 +59,14 @@ function WaitlistContent() {
         );
         console.log("Transmission Successful");
       } catch (err: any) {
-        console.error("Background sync error:", err);
-        // We don't block the user's flow here, but we log it for debugging
+        // This log will reveal exactly why the backend is rejecting the request (400)
+        console.error("Background sync error:", {
+          status: err.response?.status,
+          validationDetails: err.response?.data?.detail, // FastAPI/Pydantic error messages
+          sentData: { full_name: cleanName, email: cleanEmail, ref: referralCode }
+        });
+      } finally {
+        isSubmitting.current = false;
       }
     };
 
