@@ -9,7 +9,7 @@ from app.core.db import get_session, init_db
 from app.models.users import User 
 from app.api import auth 
 from app.core.config import settings
-from app.services.email import send_verification_email
+from app.services.email import send_verification_email, send_reminder_email
 
 app = FastAPI(title="NaweMusic API")
 
@@ -25,13 +25,7 @@ app.add_middleware(
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=[
-        "Content-Type", 
-        "Set-Cookie", 
-        "Access-Control-Allow-Headers", 
-        "Authorization", 
-        "X-Admin-Key"
-    ],
+    allow_headers=["*"], # Fixed: Wildcard ensures X-Admin-Key is never blocked by CORS
 )
 
 app.include_router(auth.router)
@@ -44,14 +38,12 @@ def on_startup():
 async def root():
     return {"status": "online", "service": "NaweMusic Backend"}
 
-# --- HEALTH CHECK FOR CRON-JOB.ORG ---
+# --- INFRASTRUCTURE: HEALTH CHECK ---
 @app.get("/health")
 async def health_check():
-    """
-    Lightweight endpoint to keep the Render instance from sleeping.
-    """
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
 
+# --- CORE: JOIN WAITLIST ---
 @app.post("/join")
 async def join_waitlist(
     user_data: User, 
@@ -96,20 +88,17 @@ async def join_waitlist(
         "message": "Spot secured! Check your email."
     }
 
-# --- NEW CRON ENDPOINT ---
+# --- ADMIN: GROWTH INTELLIGENCE & RE-ENGAGEMENT ---
+
 @app.post("/admin/process-reminders")
 async def process_reminders(
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
 ):
-    """
-    Triggered daily via cron-job.org to nudge unverified users.
-    """
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Use current UTC time for consistent comparison
     cutoff = datetime.now(timezone.utc) - timedelta(days=1)
     
     statement = select(User).where(
@@ -120,12 +109,11 @@ async def process_reminders(
     pending_users = session.exec(statement).all()
 
     for user in pending_users:
-        # Re-generating token ensures it is valid for the reminder email
         token = auth.create_verification_token(user.email)
         verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
         
         background_tasks.add_task(
-            send_verification_email,
+            send_reminder_email, # Using the specialized reminder template
             email=user.email,
             full_name=user.full_name,
             verification_link=verification_link
@@ -137,16 +125,62 @@ async def process_reminders(
     session.commit()
     return {"status": "success", "reminders_sent": len(pending_users)}
 
+@app.delete("/admin/users/{email}")
+async def delete_user(
+    email: str,
+    session: Session = Depends(get_session),
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """Purge a user to allow a fresh start."""
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    statement = select(User).where(User.email == email)
+    user = session.exec(statement).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    session.delete(user)
+    session.commit()
+    return {"status": "success", "message": f"Artist {email} purged."}
+
+@app.post("/admin/users/{email}/resend")
+async def resend_verification(
+    email: str,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """Manually dispatch a fresh verification link."""
+    if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    statement = select(User).where(User.email == email)
+    user = session.exec(statement).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = auth.create_verification_token(user.email)
+    verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
+    
+    background_tasks.add_task(
+        send_verification_email,
+        email=user.email,
+        full_name=user.full_name,
+        verification_link=verification_link
+    )
+
+    return {"status": "success", "message": "Verification link resent."}
+
 @app.get("/admin/stats")
 async def get_admin_stats(
     session: Session = Depends(get_session),
     x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key") 
 ):
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
-        raise HTTPException(
-            status_code=403, 
-            detail="Unauthorized: AuraWorks Growth Intelligence Access Denied."
-        )
+        raise HTTPException(status_code=403, detail="Unauthorized")
 
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
@@ -169,6 +203,7 @@ async def get_admin_stats(
             "email": u.email,
             "referral_code": u.referral_code,
             "is_verified": u.is_verified,
+            "reminder_sent": u.reminder_sent, # Added to track nudge status in UI
             "invite_count": invite_count
         })
 
@@ -180,9 +215,14 @@ async def get_admin_stats(
     
     for i in range(6, -1, -1):
         target_date = (now - timedelta(days=i)).date()
+        # Robust date check to avoid SQL dialect errors
+        start_of_day = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
+        end_of_day = start_of_day + timedelta(days=1)
+        
         day_signups = session.exec(
             select(func.count(User.id)).where(
-                func.date(User.created_at) == target_date
+                User.created_at >= start_of_day,
+                User.created_at < end_of_day
             )
         ).one()
         

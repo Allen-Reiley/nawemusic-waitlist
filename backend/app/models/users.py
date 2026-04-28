@@ -22,7 +22,7 @@ class User(SQLModel, table=True):
     )
     
     # Self-referential ID to track who invited this user
-    # links back to User.id
+    # This links back to the id field of the same 'user' table
     referred_by_id: Optional[int] = Field(default=None, foreign_key="user.id")
     
     # Status & Verification
@@ -34,7 +34,7 @@ class User(SQLModel, table=True):
     reminder_sent: bool = Field(default=False)
     
     # Track when the user joined for leaderboard sorting and admin stats
-    # Using timezone.utc ensures consistency across Render's global infrastructure
+    # Using timezone.utc ensures consistency across global infrastructure
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False

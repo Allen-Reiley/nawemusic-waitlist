@@ -15,9 +15,10 @@ import {
   Badge,
   Flex,
   Grid,
-  Icon
+  Icon,
+  Button
 } from '@tremor/react';
-import { Users, MousePointerClick, UserCheck, Share2, Loader2 } from 'lucide-react';
+import { Users, MousePointerClick, UserCheck, Share2, Loader2, Trash2, RefreshCcw } from 'lucide-react';
 import api from '@/lib/api';
 
 interface DashboardData {
@@ -26,27 +27,7 @@ interface DashboardData {
     email: string;
     referral_code: string;
     is_verified: boolean;
-    invite_count: number;
-  }>;
-  stats: {
-    total_visits: number;
-    total_signups: number;
-    conversion_rate: number;
-    avg_referrals: number;
-  };
-  chartData: Array<{
-    date: string;
-    Visits: number;
-    Signups: number;
-  }>;
-}
-
-interface DashboardData {
-  users: Array<{
-    full_name: string;
-    email: string;
-    referral_code: string;
-    is_verified: boolean;
+    reminder_sent: boolean; // Added for nudge tracking
     invite_count: number;
   }>;
   stats: {
@@ -66,23 +47,16 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
+  const [processingAction, setProcessingAction] = useState<string | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
-    // Only set loading if we don't have data yet to avoid flickering on refreshes
     if (!data) setLoading(true);
-    
     try {
       const response = await api.get('/admin/stats');
       setData(response.data);
       setAuthorized(true);
     } catch (err: any) {
-      // Detailed error logging to help debug the 400/403 issues seen in Render logs
-      console.error("Dashboard Fetch Error Detail:", {
-        status: err.response?.status,
-        data: err.response?.data,
-        message: err.message
-      });
-      
+      console.error("Dashboard Fetch Error:", err);
       if (err.response?.status === 403) {
         setAuthorized(false);
         sessionStorage.removeItem('nawemusic_admin_auth');
@@ -92,30 +66,53 @@ export default function DashboardPage() {
     }
   }, [data]);
 
+  // PURGE ACTION
+  const handlePurge = async (email: string) => {
+    if (!confirm(`AuraWorks Audit: Purge record for ${email}? This action is irreversible.`)) return;
+    setProcessingAction(email);
+    try {
+      await api.delete(`/admin/users/${email}`);
+      fetchDashboardData();
+    } catch (err) {
+      alert("Purge Failed. Check Render logs.");
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
+  // RESEND ACTION
+  const handleResend = async (email: string) => {
+    setProcessingAction(email);
+    try {
+      await api.post(`/admin/users/${email}/resend`);
+      alert(`Fresh link dispatched to ${email}`);
+      fetchDashboardData();
+    } catch (err) {
+      alert("Resend Failed.");
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
   useEffect(() => {
     const adminSecret = process.env.NEXT_PUBLIC_ADMIN_SECRET_KEY;
     const sessionAuth = sessionStorage.getItem('nawemusic_admin_auth');
 
-    if (sessionAuth && sessionAuth === adminSecret) {
+    if (sessionAuth === adminSecret) {
       setAuthorized(true);
       fetchDashboardData();
     } else {
       const entry = prompt("AuraWorks Security: Enter Admin Key");
-      if (entry && entry === adminSecret) {
-        sessionStorage.setItem('nawemusic_admin_auth', entry);
+      if (entry === adminSecret) {
+        sessionStorage.setItem('nawemusic_admin_auth', entry || "");
         setAuthorized(true);
         fetchDashboardData();
       } else {
-        // If they fail the prompt, we stop loading and redirect
         setLoading(false);
         window.location.href = "/";
       }
     }
 
-    /** * OPTIMIZATION: Polling interval adjusted to 60 seconds.
-     * Prevents database connection exhaustion and unnecessary CPU load 
-     * as identified in the Render logs.
-     */
     const interval = setInterval(() => {
       if (sessionStorage.getItem('nawemusic_admin_auth') === adminSecret) {
         fetchDashboardData();
@@ -125,7 +122,6 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchDashboardData]);
 
-  // If we are loading or not authorized, show the spinner
   if (loading || !authorized || !data) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center space-y-4">
@@ -150,7 +146,6 @@ export default function DashboardPage() {
           </Badge>
         </header>
 
-        {/* Top Level KPIs */}
         <Grid numItemsSm={2} numItemsLg={4} className="gap-6">
           <StatCard title="Total Visits" value={data.stats.total_visits.toLocaleString()} icon={MousePointerClick} />
           <StatCard title="Total Signups" value={data.stats.total_signups} icon={Users} />
@@ -158,10 +153,8 @@ export default function DashboardPage() {
           <StatCard title="Avg. Referrals" value={data.stats.avg_referrals.toFixed(2)} icon={Share2} />
         </Grid>
 
-        {/* Acquisition Trend */}
         <Card className="bg-neutral-900 border-neutral-800 p-8 shadow-2xl">
           <Text className="text-white font-bold text-lg mb-2 uppercase tracking-tight">Acquisition Trend</Text>
-          <Text className="text-neutral-500 text-sm mb-6">7-day rolling window of artist engagement</Text>
           <AreaChart
             className="h-80 mt-8"
             data={data.chartData}
@@ -171,15 +164,12 @@ export default function DashboardPage() {
             showLegend={true}
             showGridLines={false}
             curveType="monotone"
-            valueFormatter={(number: number) => Intl.NumberFormat("en-US").format(number)}
           />
         </Card>
 
-        {/* Detailed User Table */}
         <Card className="bg-neutral-900 border-neutral-800 p-0 overflow-hidden shadow-2xl">
           <div className="p-8 border-b border-white/5 bg-white/[0.01]">
              <Text className="text-white font-bold text-lg uppercase tracking-tight">Verification Ledger</Text>
-             <Text className="text-neutral-500 text-sm">Detailed breakdown of artist referral efficacy</Text>
           </div>
           <Table>
             <TableHead className="bg-white/[0.02]">
@@ -187,7 +177,8 @@ export default function DashboardPage() {
                 <TableHeaderCell className="text-neutral-400 pl-8 font-semibold uppercase tracking-wider text-[10px]">Identity</TableHeaderCell>
                 <TableHeaderCell className="text-neutral-400 font-semibold uppercase tracking-wider text-[10px]">Referral Code</TableHeaderCell>
                 <TableHeaderCell className="text-neutral-400 text-center font-semibold uppercase tracking-wider text-[10px]">Invites</TableHeaderCell>
-                <TableHeaderCell className="text-neutral-400 pr-8 font-semibold uppercase tracking-wider text-[10px]">Status</TableHeaderCell>
+                <TableHeaderCell className="text-neutral-400 font-semibold uppercase tracking-wider text-[10px]">Status</TableHeaderCell>
+                <TableHeaderCell className="text-neutral-400 pr-8 text-right font-semibold uppercase tracking-wider text-[10px]">Management</TableHeaderCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -207,13 +198,35 @@ export default function DashboardPage() {
                   <TableCell className="text-white text-center font-medium">
                     {item.invite_count}
                   </TableCell>
-                  <TableCell className="pr-8">
-                    <Badge 
-                      color={item.is_verified ? "green" : "orange"} 
-                      className="bg-opacity-10 border-none font-bold uppercase text-[10px] tracking-widest"
-                    >
-                      {item.is_verified ? "Verified" : "Pending"}
-                    </Badge>
+                  <TableCell>
+                    <Flex justifyContent="start" className="space-x-2">
+                      <Badge color={item.is_verified ? "green" : "orange"} className="bg-opacity-10 font-bold uppercase text-[10px]">
+                        {item.is_verified ? "Verified" : "Pending"}
+                      </Badge>
+                      {item.reminder_sent && !item.is_verified && (
+                        <Badge color="slate" className="bg-opacity-10 text-[9px] uppercase tracking-tighter">Nudged</Badge>
+                      )}
+                    </Flex>
+                  </TableCell>
+                  <TableCell className="pr-8 text-right">
+                    <Flex justifyContent="end" className="space-x-4">
+                       <button 
+                        onClick={() => handleResend(item.email)}
+                        disabled={processingAction === item.email}
+                        className="text-neutral-500 hover:text-orange-500 transition-colors disabled:opacity-30"
+                        title="Resend Verification Link"
+                       >
+                         <RefreshCcw className={`w-4 h-4 ${processingAction === item.email ? 'animate-spin' : ''}`} />
+                       </button>
+                       <button 
+                        onClick={() => handlePurge(item.email)}
+                        disabled={processingAction === item.email}
+                        className="text-neutral-500 hover:text-red-500 transition-colors disabled:opacity-30"
+                        title="Purge Record"
+                       >
+                         <Trash2 className="w-4 h-4" />
+                       </button>
+                    </Flex>
                   </TableCell>
                 </TableRow>
               ))}
