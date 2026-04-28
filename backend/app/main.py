@@ -1,7 +1,6 @@
 from typing import Optional, List
-# Update: include timezone
 from datetime import datetime, timedelta, timezone 
-from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks # Added BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Header, BackgroundTasks 
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select, func
 from pydantic import BaseModel
@@ -110,13 +109,9 @@ async def process_reminders(
     if not x_admin_key or x_admin_key != ADMIN_SECRET_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Cutoff is 24 hours ago
+    # Use current UTC time for consistent comparison
     cutoff = datetime.now(timezone.utc) - timedelta(days=1)
     
-    # Select users who:
-    # 1. Are NOT verified
-    # 2. Signed up more than 24 hours ago
-    # 3. Have NOT been sent a reminder yet
     statement = select(User).where(
         User.is_verified == False,
         User.created_at <= cutoff,
@@ -125,10 +120,10 @@ async def process_reminders(
     pending_users = session.exec(statement).all()
 
     for user in pending_users:
+        # Re-generating token ensures it is valid for the reminder email
         token = auth.create_verification_token(user.email)
         verification_link = f"{settings.FRONTEND_URL}/invite?token={token}"
         
-        # Use background tasks to prevent the request from timing out
         background_tasks.add_task(
             send_verification_email,
             email=user.email,
@@ -155,7 +150,6 @@ async def get_admin_stats(
 
     users = session.exec(select(User).order_by(User.created_at.desc())).all()
     total_signups = len(users)
-    
     total_visits = 1210 
     
     formatted_users = []
@@ -170,7 +164,6 @@ async def get_admin_stats(
         ).one()
         
         total_verified_invites += invite_count
-        
         formatted_users.append({
             "full_name": u.full_name,
             "email": u.email,

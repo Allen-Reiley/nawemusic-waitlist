@@ -13,7 +13,7 @@ class User(SQLModel, table=True):
     full_name: str
     
     # Referral Logic
-    # Generates a unique 6-character slug (e.g., 'a1b2c3')
+    # Generates a unique 6-character slug (e.g., 'A1B2C3')
     # index=True allows for fast lookups when a new user joins with ?ref=xyz
     referral_code: str = Field(
         default_factory=lambda: uuid.uuid4().hex[:6].upper(), 
@@ -30,10 +30,11 @@ class User(SQLModel, table=True):
     is_verified: bool = Field(default=False)
 
     # Tracker for the 24-hour follow-up nudge
-    # Ensures users only receive one reminder email
+    # Ensures users only receive one reminder email via the cron job
     reminder_sent: bool = Field(default=False)
     
     # Track when the user joined for leaderboard sorting and admin stats
+    # Using timezone.utc ensures consistency across Render's global infrastructure
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False

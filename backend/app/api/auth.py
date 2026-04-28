@@ -11,6 +11,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 def create_verification_token(email: str):
     """Generates a secure JWT for email verification."""
+    # Using settings.ACCESS_TOKEN_EXPIRE_MINUTES allows for flexible control over link life
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode = {"exp": expire, "sub": email}
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
@@ -20,21 +21,22 @@ def create_verification_token(email: str):
 async def verify_email(token: str, session: Session = Depends(get_session)):
     """Validates the token and flips the is_verified flag."""
     try:
+        # Decode the payload to extract the email (sub)
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         email: str = payload.get("sub")
         if email is None:
-            raise HTTPException(status_code=400, detail="Invalid token")
+            raise HTTPException(status_code=400, detail="Invalid token structure")
     except JWTError:
-        raise HTTPException(status_code=400, detail="Token has expired or is invalid")
+        raise HTTPException(status_code=400, detail="Verification link has expired or is invalid")
 
-    # Fetch user
+    # Fetch user based on the email encoded in the JWT
     statement = select(User).where(User.email == email)
     user = session.exec(statement).first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Artist record not found")
     
-    # If already verified, still return the code so they can see their dashboard
+    # Logic for re-clicks: If already verified, return success to prevent UX friction
     if user.is_verified:
         return {
             "status": "success",
@@ -42,11 +44,16 @@ async def verify_email(token: str, session: Session = Depends(get_session)):
             "referral_code": user.referral_code
         }
 
-    # Flip the flag and save
-    user.is_verified = True
-    session.add(user)
-    session.commit()
-    session.refresh(user) # Ensure we have the latest state from the DB
+    # Flip the flag and commit to the database
+    try:
+        user.is_verified = True
+        session.add(user)
+        session.commit()
+        session.refresh(user) # Refresh ensures the referral_code and state are current
+    except Exception as e:
+        session.rollback()
+        print(f"VERIFICATION DB ERROR: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during verification")
     
     return {
         "status": "success", 
